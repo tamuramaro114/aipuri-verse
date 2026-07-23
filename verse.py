@@ -8,12 +8,12 @@ import base64
 # データの保存先ファイル
 DATA_FILE = "aipri_data.csv"
 
-# データの読み込み関数（古いデータに部位カラムがない場合のエラー防止のため初期値を追加）
+# データの読み込み関数
 def load_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
         if "part" not in df.columns:
-            df["part"] = "ワンピース" # 既存データ用のデフォルト
+            df["part"] = "ワンピース"
         return df
     else:
         return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
@@ -40,10 +40,15 @@ MILLEFEE_BULLET_OPTIONS = [
     "おねがいvol.1", "おねがいvol.2"
 ]
 
-ALL_BULLET_OPTIONS = NORMAL_BULLET_OPTIONS + MILLEFEE_BULLET_OPTIONS
+# グミ用の弾数の選択肢リスト（将来追加されたとき用）
+GUMMI_BULLET_OPTIONS = [
+    "グミvol.1", "グミvol.2", "グミvol.3"
+]
 
-# 属性の選択肢リスト
-ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ", "コラボ", "フルコーデ", "ミルフィー"]
+ALL_BULLET_OPTIONS = NORMAL_BULLET_OPTIONS + MILLEFEE_BULLET_OPTIONS + GUMMI_BULLET_OPTIONS
+
+# 属性の選択肢リスト（「グミ」を追加）
+ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ", "コラボ", "フルコーデ", "ミルフィー", "グミ"]
 
 # コーデの部位の選択肢リスト
 PART_OPTIONS = ["アクセ", "ワンピース", "トップス", "ボトムス", "シューズ"]
@@ -115,11 +120,9 @@ if menu == "コレクション一覧・検索":
             ]
 
         # --- 並べ替え（ソート）処理 ---
-        # 部位の順番を数値化して一時列に追加
         filtered_data["part_sort_val"] = filtered_data["part"].map(PART_SORT_ORDER).fillna(99)
 
         if sort_option == "コーデ名順 (アクセ→服→靴)":
-            # コーデ名で並べたあと、同じコーデ名の中では アクセ→服→靴 の順にする
             filtered_data = filtered_data.sort_values(by=["code_name", "part_sort_val"], ascending=[True, True])
         elif sort_option == "50音順 (コーデ名)":
             filtered_data = filtered_data.sort_values(by="code_name", ascending=True)
@@ -134,15 +137,17 @@ if menu == "コレクション一覧・検索":
 
         st.write(f"全 **{len(data)}** 枚中 / 表示件数: **{len(filtered_data)}** 枚")
 
-        # 横に並べる数に応じて見出しの文字サイズを動的に変更
+        # 横に並べる数に応じて、カード内の「すべての文字サイズ」を動的に変更
         font_sizes = {
-            2: "1.5rem",
-            3: "1.3rem",
-            4: "1.1rem",
-            5: "0.95rem",
-            6: "0.85rem"
+            2: {"title": "1.5rem", "body": "1.0rem"},
+            3: {"title": "1.3rem", "body": "0.9rem"},
+            4: {"title": "1.1rem", "body": "0.8rem"},
+            5: {"title": "0.95rem", "body": "0.75rem"},
+            6: {"title": "0.85rem", "body": "0.7rem"}
         }
-        current_font_size = font_sizes.get(cols_per_row, "1.2rem")
+        current_sizes = font_sizes.get(cols_per_row, {"title": "1.2rem", "body": "0.9rem"})
+        title_size = current_sizes["title"]
+        body_size = current_sizes["body"]
 
         # 画面をグリッド状にレイアウト
         for idx, (i, row) in enumerate(filtered_data.iterrows()):
@@ -150,7 +155,8 @@ if menu == "コレクション一覧・検索":
                 col = st.columns(cols_per_row)
             
             with col[idx % cols_per_row]:
-                st.markdown(f"<p style='font-size: {current_font_size}; font-weight: bold; margin-bottom: 0.5rem;'>{row['code_name']}</p>", unsafe_allow_html=True)
+                # コーデ名
+                st.markdown(f"<p style='font-size: {title_size}; font-weight: bold; margin-bottom: 0.5rem;'>{row['code_name']}</p>", unsafe_allow_html=True)
                 
                 # Base64形式の画像をデコードして表示
                 if pd.notna(row["image_base64"]) and row["image_base64"] != "":
@@ -162,12 +168,16 @@ if menu == "コレクション一覧・検索":
                 else:
                     st.warning("画像なし")
                 
-                st.write(f"🏷️ **弾数:** {row['bullet']}")
-                if "attribute" in row and pd.notna(row["attribute"]):
-                    st.write(f"⭐ **属性:** {row['attribute']}")
-                if "part" in row and pd.notna(row["part"]):
-                    st.write(f"👗 **部位:** {row['part']}")
-                st.write(f"🎤 **キャラクター:** {row['character']}")
+                # 詳細情報（弾、属性、部位、キャラクター）の文字サイズをスライダーに応じて変更
+                info_html = f"""
+                <div style='font-size: {body_size}; line-height: 1.4; margin-bottom: 0.5rem;'>
+                    🏷️ <b>弾数:</b> {row['bullet']}<br>
+                    ⭐ <b>属性:</b> {row.get('attribute', 'つうじょう')}<br>
+                    👗 <b>部位:</b> {row.get('part', 'ワンピース')}<br>
+                    🎤 <b>キャラクター:</b> {row.get('character', '')}
+                </div>
+                """
+                st.markdown(info_html, unsafe_allow_html=True)
                 
                 # 編集・削除ボタンを横並びに配置
                 btn_col1, btn_col2 = st.columns(2)
@@ -196,7 +206,14 @@ if menu == "コレクション一覧・検索":
                         a_idx = ATTRIBUTE_OPTIONS.index(attr_val) if attr_val in ATTRIBUTE_OPTIONS else 0
                         new_attribute = st.selectbox("属性", ATTRIBUTE_OPTIONS, index=a_idx, key=f"ea_{row['id']}")
                         
-                        current_bullets = MILLEFEE_BULLET_OPTIONS if new_attribute == "ミルフィー" else NORMAL_BULLET_OPTIONS
+                        # 属性に応じた弾の選択肢切り替え
+                        if new_attribute == "ミルフィー":
+                            current_bullets = MILLEFEE_BULLET_OPTIONS
+                        elif new_attribute == "グミ":
+                            current_bullets = GUMMI_BULLET_OPTIONS
+                        else:
+                            current_bullets = NORMAL_BULLET_OPTIONS
+                            
                         b_val = row["bullet"]
                         b_idx = current_bullets.index(b_val) if b_val in current_bullets else 0
                         new_bullet = st.selectbox("弾数", current_bullets, index=b_idx, key=f"eb_{row['id']}")
@@ -258,9 +275,11 @@ elif menu == "プリフォトを追加する":
         # 属性の選択（ラジオボタン）
         attribute = st.radio("属性を選択", ATTRIBUTE_OPTIONS, horizontal=True)
         
-        # 属性が「ミルフィー」のときは専用の選択肢、それ以外は通常のものに切り替え
+        # 属性に応じた弾数の選択肢切り替え
         if attribute == "ミルフィー":
             bullet = st.radio("弾数を選択 (ミルフィー)", MILLEFEE_BULLET_OPTIONS, horizontal=True)
+        elif attribute == "グミ":
+            bullet = st.radio("弾数を選択 (グミ)", GUMMI_BULLET_OPTIONS, horizontal=True)
         else:
             bullet = st.radio("弾数を選択", NORMAL_BULLET_OPTIONS, horizontal=True)
         
