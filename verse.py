@@ -30,8 +30,8 @@ for i in range(1, 7):
 for i in range(1, 7):
     BULLET_OPTIONS.append(f"おねがい{i}だん")
 
-# 属性の選択肢リスト
-ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ"]
+# 属性の選択肢リスト（「コラボ」を追加）
+ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ", "コラボ"]
 
 # ---------------------------------------------------------
 # 1. コレクション一覧・検索画面
@@ -96,12 +96,60 @@ if menu == "コレクション一覧・検索":
                     st.write(f"⭐ **属性:** {row['attribute']}")
                 st.write(f"🎤 **キャラクター:** {row['character']}")
                 
-                # 削除ボタン
-                if st.button(f"削除 (ID: {int(row['id'])})", key=f"del_{row['id']}"):
-                    data = data[data["id"] != row["id"]]
-                    data.to_csv(DATA_FILE, index=False)
-                    st.success("削除しました！画面を更新してください。")
-                    st.rerun()
+                # 編集・削除ボタンを横並びに配置
+                btn_col1, btn_col2 = st.columns(2)
+                
+                with btn_col1:
+                    edit_key = f"edit_mode_{row['id']}"
+                    if st.button("編集", key=f"btn_edit_{row['id']}"):
+                        st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+                
+                with btn_col2:
+                    if st.button("削除", key=f"del_{row['id']}"):
+                        data = data[data["id"] != row["id"]]
+                        data.to_csv(DATA_FILE, index=False)
+                        st.success("削除しました！画面を更新してください。")
+                        st.rerun()
+
+                # 編集フォーム（編集ボタンが押されたら展開される）
+                if st.session_state.get(f"edit_mode_{row['id']}", False):
+                    with st.form(key=f"form_edit_{row['id']}"):
+                        st.markdown("---")
+                        st.write("✏️ **内容の編集**")
+                        
+                        new_code_name = st.text_input("コーデ名", value=row["code_name"])
+                        
+                        # 弾数の初期インデックス取得
+                        b_idx = BULLET_OPTIONS.index(row["bullet"]) if row["bullet"] in BULLET_OPTIONS else 0
+                        new_bullet = st.selectbox("弾数", BULLET_OPTIONS, index=b_idx, key=f"eb_{row['id']}")
+                        
+                        # 属性の初期インデックス取得
+                        attr_val = row["attribute"] if "attribute" in row and pd.notna(row["attribute"]) else "つうじょう"
+                        a_idx = ATTRIBUTE_OPTIONS.index(attr_val) if attr_val in ATTRIBUTE_OPTIONS else 0
+                        new_attribute = st.selectbox("属性", ATTRIBUTE_OPTIONS, index=a_idx, key=f"ea_{row['id']}")
+                        
+                        char_val = row["character"] if pd.notna(row["character"]) else ""
+                        new_character = st.text_input("キャラクター", value=char_val, key=f"ec_{row['id']}")
+                        
+                        new_image = st.file_uploader("画像を変更する場合のみ選択", type=["jpg", "png", "jpeg"], key=f"ei_{row['id']}")
+
+                        if st.form_submit_button("更新を保存"):
+                            # データの更新処理
+                            data.loc[data["id"] == row["id"], "code_name"] = new_code_name
+                            data.loc[data["id"] == row["id"], "bullet"] = new_bullet
+                            data.loc[data["id"] == row["id"], "attribute"] = new_attribute
+                            data.loc[data["id"] == row["id"], "character"] = new_character
+                            
+                            if new_image is not None:
+                                bytes_data = new_image.getvalue()
+                                new_base64 = base64.b64encode(bytes_data).decode("utf-8")
+                                data.loc[data["id"] == row["id"], "image_base64"] = new_base64
+                            
+                            data.to_csv(DATA_FILE, index=False)
+                            st.session_state[edit_key] = False
+                            st.success("更新しました！画面を更新してください。")
+                            st.rerun()
+
                 st.markdown("---")
 
 # ---------------------------------------------------------
@@ -115,9 +163,15 @@ elif menu == "プリフォトを追加する":
 
     uploaded_image = st.file_uploader("プリフォトの画像 (スマホの写真など)", type=["jpg", "png", "jpeg"])
 
+    # アップロードされた画像のプレビュー表示
     if uploaded_image is not None:
         file_base_name = os.path.splitext(uploaded_image.name)[0]
         st.info(f"📁 アップロードされたファイル名: `{uploaded_image.name}`")
+        
+        # 画像プレビュー
+        st.write("🖼️ **登録される画像プレビュー:**")
+        st.image(uploaded_image, width=200)
+
         if st.button("✨ ファイル名をコーデ名として使う"):
             st.session_state["code_name_input"] = file_base_name
             st.rerun()
@@ -143,7 +197,6 @@ elif menu == "プリフォトを追加する":
                 
                 image_base64 = ""
                 if uploaded_image is not None:
-                    # 画像を読み込んでBase64文字列に変換
                     bytes_data = uploaded_image.getvalue()
                     image_base64 = base64.b64encode(bytes_data).decode("utf-8")
 
