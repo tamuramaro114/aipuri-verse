@@ -21,17 +21,27 @@ st.title("✨ アイプリバース プリフォト管理アプリ ✨")
 st.sidebar.header("メニュー")
 menu = st.sidebar.radio("選択してください", ["コレクション一覧・検索", "プリフォトを追加する"])
 
-# 弾数の選択肢リスト
-BULLET_OPTIONS = []
+# 通常の弾数の選択肢リスト
+NORMAL_BULLET_OPTIONS = []
 for i in range(1, 7):
-    BULLET_OPTIONS.append(f"{i}だん")
+    NORMAL_BULLET_OPTIONS.append(f"{i}だん")
 for i in range(1, 7):
-    BULLET_OPTIONS.append(f"リング{i}だん")
+    NORMAL_BULLET_OPTIONS.append(f"リング{i}だん")
 for i in range(1, 7):
-    BULLET_OPTIONS.append(f"おねがい{i}だん")
+    NORMAL_BULLET_OPTIONS.append(f"おねがい{i}だん")
 
-# 属性の選択肢リスト（「コラボ」を追加）
-ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ", "コラボ"]
+# ミルフィー用の弾数の選択肢リスト
+MILLEFEE_BULLET_OPTIONS = [
+    "vol.1", "vol.2", "vol.3", 
+    "Rvol.1", "Rvol.2", "Rvol.3", 
+    "おねがいvol.1", "おねがいvol.2"
+]
+
+# すべての弾数を合わせたリスト（検索用など）
+ALL_BULLET_OPTIONS = NORMAL_BULLET_OPTIONS + MILLEFEE_BULLET_OPTIONS
+
+# 属性の選択肢リスト（「ミルフィー」を追加）
+ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ", "コラボ", "フルコーデ", "ミルフィー"]
 
 # ---------------------------------------------------------
 # 1. コレクション一覧・検索画面
@@ -42,10 +52,14 @@ if menu == "コレクション一覧・検索":
     if data.empty:
         st.info("まだプリフォトが登録されていません。「プリフォトを追加する」から登録してみましょう！")
     else:
-        # 絞り込みフィルター
-        st.sidebar.subheader("🔍 絞り込み検索")
-        existing_bullets = [b for b in BULLET_OPTIONS if b in data["bullet"].values]
-        other_bullets = [b for b in data["bullet"].dropna().unique() if b not in BULLET_OPTIONS]
+        # 絞り込みフィルター & 設定
+        st.sidebar.subheader("🔍 絞り込み検索 & 設定")
+        
+        # 横一列に表示する数を変更できるスライダー
+        cols_per_row = st.sidebar.slider("横に並べるカードの数", min_value=2, max_value=6, value=3)
+
+        existing_bullets = [b for b in ALL_BULLET_OPTIONS if b in data["bullet"].values]
+        other_bullets = [b for b in data["bullet"].dropna().unique() if b not in ALL_BULLET_OPTIONS]
         all_bullet_choices = ["すべて"] + existing_bullets + other_bullets
         
         selected_bullet = st.sidebar.selectbox("弾数で絞り込み", all_bullet_choices)
@@ -71,8 +85,6 @@ if menu == "コレクション一覧・検索":
 
         st.write(f"全 **{len(data)}** 枚中 / 表示件数: **{len(filtered_data)}** 枚")
 
-        cols_per_row = 3
-        
         # 画面をグリッド状にレイアウト
         for idx, (i, row) in enumerate(filtered_data.iterrows()):
             if idx % cols_per_row == 0:
@@ -119,14 +131,15 @@ if menu == "コレクション一覧・検索":
                         
                         new_code_name = st.text_input("コーデ名", value=row["code_name"])
                         
-                        # 弾数の初期インデックス取得
-                        b_idx = BULLET_OPTIONS.index(row["bullet"]) if row["bullet"] in BULLET_OPTIONS else 0
-                        new_bullet = st.selectbox("弾数", BULLET_OPTIONS, index=b_idx, key=f"eb_{row['id']}")
-                        
-                        # 属性の初期インデックス取得
                         attr_val = row["attribute"] if "attribute" in row and pd.notna(row["attribute"]) else "つうじょう"
                         a_idx = ATTRIBUTE_OPTIONS.index(attr_val) if attr_val in ATTRIBUTE_OPTIONS else 0
                         new_attribute = st.selectbox("属性", ATTRIBUTE_OPTIONS, index=a_idx, key=f"ea_{row['id']}")
+                        
+                        # 属性がミルフィーかどうかに応じて編集時の弾数の選択肢を切替
+                        current_bullets = MILLEFEE_BULLET_OPTIONS if new_attribute == "ミルフィー" else NORMAL_BULLET_OPTIONS
+                        b_val = row["bullet"]
+                        b_idx = current_bullets.index(b_val) if b_val in current_bullets else 0
+                        new_bullet = st.selectbox("弾数", current_bullets, index=b_idx, key=f"eb_{row['id']}")
                         
                         char_val = row["character"] if pd.notna(row["character"]) else ""
                         new_character = st.text_input("キャラクター", value=char_val, key=f"ec_{row['id']}")
@@ -134,7 +147,6 @@ if menu == "コレクション一覧・検索":
                         new_image = st.file_uploader("画像を変更する場合のみ選択", type=["jpg", "png", "jpeg"], key=f"ei_{row['id']}")
 
                         if st.form_submit_button("更新を保存"):
-                            # データの更新処理
                             data.loc[data["id"] == row["id"], "code_name"] = new_code_name
                             data.loc[data["id"] == row["id"], "bullet"] = new_bullet
                             data.loc[data["id"] == row["id"], "attribute"] = new_attribute
@@ -168,9 +180,8 @@ elif menu == "プリフォトを追加する":
         file_base_name = os.path.splitext(uploaded_image.name)[0]
         st.info(f"📁 アップロードされたファイル名: `{uploaded_image.name}`")
         
-        # 画像プレビュー
         st.write("🖼️ **登録される画像プレビュー:**")
-        st.image(uploaded_image, width=200)
+        st.image(uploaded_image, width=250)
 
         if st.button("✨ ファイル名をコーデ名として使う"):
             st.session_state["code_name_input"] = file_base_name
@@ -179,11 +190,14 @@ elif menu == "プリフォトを追加する":
     with st.form("add_form", clear_on_submit=True):
         code_name = st.text_input("コーデ名", value=st.session_state["code_name_input"])
         
-        # 弾数の選択（ラジオボタン）
-        bullet = st.radio("弾数を選択", BULLET_OPTIONS, horizontal=True)
-        
         # 属性の選択（ラジオボタン）
         attribute = st.radio("属性を選択", ATTRIBUTE_OPTIONS, horizontal=True)
+        
+        # 属性が「ミルフィー」のときは専用の選択肢、それ以外は通常のものに切り替え
+        if attribute == "ミルフィー":
+            bullet = st.radio("弾数を選択 (ミルフィー)", MILLEFEE_BULLET_OPTIONS, horizontal=True)
+        else:
+            bullet = st.radio("弾数を選択", NORMAL_BULLET_OPTIONS, horizontal=True)
         
         character = st.text_input("映っているキャラクター名 (マイキャラ / アニメキャラ名)")
 
@@ -200,7 +214,6 @@ elif menu == "プリフォトを追加する":
                     bytes_data = uploaded_image.getvalue()
                     image_base64 = base64.b64encode(bytes_data).decode("utf-8")
 
-                # 新しいデータを追加
                 new_row = pd.DataFrame({
                     "id": [new_id],
                     "code_name": [code_name],
