@@ -14,16 +14,13 @@ SCOPE = [
 ]
 
 def get_sheet_client():
-    # Streamlit Cloudの Secrets から認証情報を読み込む仕組み
     if "gcp_service_account" in st.secrets:
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
     else:
-        # ローカル環境用（同じフォルダに credentials.json がある場合）
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
     
     client = gspread.authorize(creds)
-    # ※スプレッドシートのファイル名をここに指定します
     spreadsheet = client.open("aipri_data") 
     return spreadsheet.sheet1
 
@@ -37,7 +34,6 @@ def load_data():
             return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
         if "part" not in df.columns:
             df["part"] = "ワンピース"
-        # idや数値データを正しく扱うための変換
         df["id"] = pd.to_numeric(df["id"], errors="coerce")
         return df
     except Exception as e:
@@ -49,7 +45,6 @@ def save_data(df):
     try:
         sheet = get_sheet_client()
         sheet.clear()
-        # ヘッダーとデータをまとめて書き込み
         data_to_write = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(data_to_write)
     except Exception as e:
@@ -60,6 +55,39 @@ data = load_data()
 st.title("✨ アイプリバース プリフォト管理アプリ ✨")
 st.sidebar.header("メニュー")
 menu = st.sidebar.radio("選択してください", ["コレクション一覧・検索", "プリフォトを追加する"])
+
+# --- サイドバー：データバックアップ（CSV）機能 ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 データ管理（バックアップ）")
+
+# 1. CSVダウンロード機能
+if not data.empty:
+    csv_data = data.to_csv(index=False).encode("utf-8")
+    st.sidebar.download_button(
+        label="📥 CSVをダウンロード",
+        data=csv_data,
+        file_name="aipri_data_backup.csv",
+        mime="text/csv",
+    )
+
+# 2. CSVアップロード（復元・上書き）機能
+uploaded_csv = st.sidebar.file_uploader("📤 CSVからデータを復元", type=["csv"])
+if uploaded_csv is not None:
+    try:
+        restored_df = pd.read_csv(uploaded_csv)
+        # 必要なカラムが揃っているか簡易チェック
+        required_cols = ["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"]
+        if all(col in restored_df.columns for col in required_cols):
+            if st.sidebar.button("⚠️ このCSVデータでスプレッドシートを上書きする"):
+                save_data(restored_df)
+                st.sidebar.success("データを復元・上書きしました！画面を更新してください。")
+                st.rerun()
+        else:
+            st.sidebar.error("CSVのフォーマットが正しくありません。")
+    except Exception as e:
+        st.sidebar.error(f"読み込みエラー: {e}")
+
+st.sidebar.markdown("---")
 
 # 通常の弾数の選択肢リスト
 NORMAL_BULLET_OPTIONS = []
