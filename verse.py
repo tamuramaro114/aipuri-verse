@@ -4,19 +4,56 @@ import streamlit as st
 import os
 import io
 import base64
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-# データの保存先ファイル
-DATA_FILE = "aipri_data.csv"
+# --- Googleスプレッドシート連携の設定 ---
+SCOPE = [
+    'https://spreadsheets.google.com/feeds',
+    'https://www.googleapis.com/auth/drive'
+]
+
+def get_sheet_client():
+    # Streamlit Cloudの Secrets から認証情報を読み込む仕組み
+    if "gcp_service_account" in st.secrets:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+    else:
+        # ローカル環境用（同じフォルダに credentials.json がある場合）
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
+    
+    client = gspread.authorize(creds)
+    # ※スプレッドシートのファイル名をここに指定します
+    spreadsheet = client.open("aipri_data") 
+    return spreadsheet.sheet1
 
 # データの読み込み関数
 def load_data():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
+    try:
+        sheet = get_sheet_client()
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        if df.empty:
+            return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
         if "part" not in df.columns:
             df["part"] = "ワンピース"
+        # idや数値データを正しく扱うための変換
+        df["id"] = pd.to_numeric(df["id"], errors="coerce")
         return df
-    else:
+    except Exception as e:
+        st.error(f"スプレッドシートからの読み込みに失敗しました: {e}")
         return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
+
+# データの保存関数
+def save_data(df):
+    try:
+        sheet = get_sheet_client()
+        sheet.clear()
+        # ヘッダーとデータをまとめて書き込み
+        data_to_write = [df.columns.values.tolist()] + df.values.tolist()
+        sheet.update(data_to_write)
+    except Exception as e:
+        st.error(f"スプレッドシートへの保存に失敗しました: {e}")
 
 data = load_data()
 
@@ -40,14 +77,14 @@ MILLEFEE_BULLET_OPTIONS = [
     "おねがいvol.1", "おねがいvol.2"
 ]
 
-# グミ用の弾数の選択肢リスト（将来追加されたとき用）
+# グミ用の弾数の選択肢リスト
 GUMMI_BULLET_OPTIONS = [
     "グミvol.1", "グミvol.2", "グミvol.3"
 ]
 
 ALL_BULLET_OPTIONS = NORMAL_BULLET_OPTIONS + MILLEFEE_BULLET_OPTIONS + GUMMI_BULLET_OPTIONS
 
-# 属性の選択肢リスト（「グミ」を追加）
+# 属性の選択肢リスト
 ATTRIBUTE_OPTIONS = ["つうじょう", "プリティー", "特殊", "チャンスコーデ", "コラボ", "フルコーデ", "ミルフィー", "グミ"]
 
 # コーデの部位の選択肢リスト
@@ -71,10 +108,8 @@ if menu == "コレクション一覧・検索":
     if data.empty:
         st.info("まだプリフォトが登録されていません。「プリフォトを追加する」から登録してみましょう！")
     else:
-        # 絞り込みフィルター & 設定
         st.sidebar.subheader("🔍 絞り込み検索 & 設定")
         
-        # 並べ替え機能の選択
         sort_option = st.sidebar.selectbox("並べ替え", [
             "コーデ名順 (アクセ→服→靴)", 
             "50音順 (コーデ名)", 
@@ -84,7 +119,6 @@ if menu == "コレクション一覧・検索":
             "登録順 (古い順)"
         ])
         
-        # 横一列に表示する数を変更できるスライダー
         cols_per_row = st.sidebar.slider("横に並べるカードの数", min_value=2, max_value=6, value=3)
 
         existing_bullets = [b for b in ALL_BULLET_OPTIONS if b in data["bullet"].values]
@@ -93,12 +127,10 @@ if menu == "コレクション一覧・検索":
         
         selected_bullet = st.sidebar.selectbox("弾数で絞り込み", all_bullet_choices)
         
-        # 属性での絞り込み
         existing_attrs = [a for a in ATTRIBUTE_OPTIONS if "attribute" in data.columns and a in data["attribute"].values]
         all_attr_choices = ["すべて"] + existing_attrs
         selected_attr = st.sidebar.selectbox("属性で絞り込み", all_attr_choices)
 
-        # 部位での絞り込み
         existing_parts = [p for p in PART_OPTIONS if "part" in data.columns and p in data["part"].values]
         all_part_choices = ["すべて"] + existing_parts
         selected_part = st.sidebar.selectbox("部位で絞り込み", all_part_choices)
@@ -119,7 +151,7 @@ if menu == "コレクション一覧・検索":
                 filtered_data["character"].str.contains(search_keyword, na=False)
             ]
 
-        # --- 並べ替え（ソート）処理 ---
+        # ソート処理
         filtered_data["part_sort_val"] = filtered_data["part"].map(PART_SORT_ORDER).fillna(99)
 
         if sort_option == "コーデ名順 (アクセ→服→靴)":
@@ -137,7 +169,6 @@ if menu == "コレクション一覧・検索":
 
         st.write(f"全 **{len(data)}** 枚中 / 表示件数: **{len(filtered_data)}** 枚")
 
-        # 横に並べる数に応じて、カード内の「すべての文字サイズ」を動的に変更
         font_sizes = {
             2: {"title": "1.5rem", "body": "1.0rem"},
             3: {"title": "1.3rem", "body": "0.9rem"},
@@ -149,16 +180,13 @@ if menu == "コレクション一覧・検索":
         title_size = current_sizes["title"]
         body_size = current_sizes["body"]
 
-        # 画面をグリッド状にレイアウト
         for idx, (i, row) in enumerate(filtered_data.iterrows()):
             if idx % cols_per_row == 0:
                 col = st.columns(cols_per_row)
             
             with col[idx % cols_per_row]:
-                # コーデ名
                 st.markdown(f"<p style='font-size: {title_size}; font-weight: bold; margin-bottom: 0.5rem;'>{row['code_name']}</p>", unsafe_allow_html=True)
                 
-                # Base64形式の画像をデコードして表示
                 if pd.notna(row["image_base64"]) and row["image_base64"] != "":
                     try:
                         image_bytes = base64.b64decode(row["image_base64"])
@@ -168,7 +196,6 @@ if menu == "コレクション一覧・検索":
                 else:
                     st.warning("画像なし")
                 
-                # 詳細情報（弾、属性、部位、キャラクター）の文字サイズをスライダーに応じて変更
                 info_html = f"""
                 <div style='font-size: {body_size}; line-height: 1.4; margin-bottom: 0.5rem;'>
                     🏷️ <b>弾数:</b> {row['bullet']}<br>
@@ -179,7 +206,6 @@ if menu == "コレクション一覧・検索":
                 """
                 st.markdown(info_html, unsafe_allow_html=True)
                 
-                # 編集・削除ボタンを横並びに配置
                 btn_col1, btn_col2 = st.columns(2)
                 
                 with btn_col1:
@@ -190,11 +216,10 @@ if menu == "コレクション一覧・検索":
                 with btn_col2:
                     if st.button("削除", key=f"del_{row['id']}"):
                         data = data[data["id"] != row["id"]]
-                        data.to_csv(DATA_FILE, index=False)
+                        save_data(data)
                         st.success("削除しました！画面を更新してください。")
                         st.rerun()
 
-                # 編集フォーム（編集ボタンが押されたら展開される）
                 if st.session_state.get(f"edit_mode_{row['id']}", False):
                     with st.form(key=f"form_edit_{row['id']}"):
                         st.markdown("---")
@@ -206,7 +231,6 @@ if menu == "コレクション一覧・検索":
                         a_idx = ATTRIBUTE_OPTIONS.index(attr_val) if attr_val in ATTRIBUTE_OPTIONS else 0
                         new_attribute = st.selectbox("属性", ATTRIBUTE_OPTIONS, index=a_idx, key=f"ea_{row['id']}")
                         
-                        # 属性に応じた弾の選択肢切り替え
                         if new_attribute == "ミルフィー":
                             current_bullets = MILLEFEE_BULLET_OPTIONS
                         elif new_attribute == "グミ":
@@ -239,7 +263,7 @@ if menu == "コレクション一覧・検索":
                                 new_base64 = base64.b64encode(bytes_data).decode("utf-8")
                                 data.loc[data["id"] == row["id"], "image_base64"] = new_base64
                             
-                            data.to_csv(DATA_FILE, index=False)
+                            save_data(data)
                             st.session_state[edit_key] = False
                             st.success("更新しました！画面を更新してください。")
                             st.rerun()
@@ -257,7 +281,6 @@ elif menu == "プリフォトを追加する":
 
     uploaded_image = st.file_uploader("プリフォトの画像 (スマホの写真など)", type=["jpg", "png", "jpeg"])
 
-    # アップロードされた画像のプレビュー表示
     if uploaded_image is not None:
         file_base_name = os.path.splitext(uploaded_image.name)[0]
         st.info(f"📁 アップロードされたファイル名: `{uploaded_image.name}`")
@@ -272,10 +295,8 @@ elif menu == "プリフォトを追加する":
     with st.form("add_form", clear_on_submit=True):
         code_name = st.text_input("コーデ名", value=st.session_state["code_name_input"])
         
-        # 属性の選択（ラジオボタン）
         attribute = st.radio("属性を選択", ATTRIBUTE_OPTIONS, horizontal=True)
         
-        # 属性に応じた弾数の選択肢切り替え
         if attribute == "ミルフィー":
             bullet = st.radio("弾数を選択 (ミルフィー)", MILLEFEE_BULLET_OPTIONS, horizontal=True)
         elif attribute == "グミ":
@@ -283,7 +304,6 @@ elif menu == "プリフォトを追加する":
         else:
             bullet = st.radio("弾数を選択", NORMAL_BULLET_OPTIONS, horizontal=True)
         
-        # 部位の選択（ラジオボタン）
         part = st.radio("部位を選択", PART_OPTIONS, horizontal=True)
         
         character = st.text_input("映っているキャラクター名 (マイキャラ / アニメキャラ名)")
@@ -312,7 +332,7 @@ elif menu == "プリフォトを追加する":
                 })
 
                 data = pd.concat([data, new_row], ignore_index=True)
-                data.to_csv(DATA_FILE, index=False)
+                save_data(data)
                 
                 st.session_state["code_name_input"] = ""
                 st.success("✨ プリフォトを正常に登録しました！")
