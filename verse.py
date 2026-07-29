@@ -111,7 +111,7 @@ def save_data(df):
     st.error(f"Googleスプレッドシートへの保存に失敗しました: {e}")
 
 
-# アップロードされた画像からQRコードを正確に切り出し、元の高精細1ドット画像のまま抽出する関数
+# アップロードされた画像からQRコードを正確に切り出し、元のサイズ（1ドット1ピクセル等）のまま保存する関数
 def process_and_optimize_qr(uploaded_image):
   try:
     image = Image.open(uploaded_image)
@@ -136,7 +136,6 @@ def process_and_optimize_qr(uploaded_image):
       _, thresh = cv2.threshold(
           rect_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
       )
-      # 保存時は余計な拡大をせず、純粋な最小1ドット単位（オリジナルサイズ）のままバイナリ化
       qr_pil = Image.fromarray(thresh).convert("1")
 
       output = io.BytesIO()
@@ -359,11 +358,11 @@ if menu == "コレクション一覧・検索":
           try:
             image_bytes = base64.b64decode(row["image_base64"])
             encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
-            # 保存データのサイズは変えず、表示時のみCSSのwidth指定やスケーリング（実質50倍相当のクッキリ表示）を適用
+            # 💡 保存データ（余白・ドット）はそのままに、CSSで「50倍」に拡大表示 (image-renderingでドットをシャープに)
             st.markdown(
                 f"""
-                        <div style="background-color: #ffffff; padding: 10px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem; overflow: auto;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 500%; max-width: none; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
+                        <div style="background-color: #ffffff; padding: 4px; border-radius: 4px; border: 1px solid #e0e0e0; display: inline-block; overflow: auto; max-width: 100%; text-align: center; margin-bottom: 0.5rem;">
+                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: calc(1 * 50px); min-width: calc(25 * 50px); height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
                         </div>
                         """,
                 unsafe_allow_html=True,
@@ -507,13 +506,13 @@ elif menu == "プリフォトを追加する":
     else:
       st.warning(msg)
 
-    st.write("🖼️ **変換後のプレビュー (拡大・高精細表示):**")
+    st.write("🖼️ **変換後のプレビュー (50倍拡大・高精細表示):**")
     encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
-    # プレビュー画面でも同様に保存データそのものは小さく保ったまま大きく表示
+    # 💡 プレビューも同様に余白を増やさず、元画像をCSSで50倍にシャープ拡大表示
     st.markdown(
         f"""
-        <div style="background-color: white; padding: 15px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center; overflow: auto; max-width: 100%;">
-            <img src="data:image/png;base64,{encoded_preview}" style="width: 500%; max-width: none; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
+        <div style="background-color: white; padding: 6px; display: inline-block; border-radius: 6px; border: 1px solid #ddd; overflow: auto; text-align: center;">
+            <img src="data:image/png;base64,{encoded_preview}" style="min-width: calc(25 * 50px); height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
         </div>
         """,
         unsafe_allow_html=True,
