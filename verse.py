@@ -538,7 +538,7 @@ elif menu == "プリフォトを追加する":
     else:
       bullet = st.radio("弾数を選択", NORMAL_BULLET_OPTIONS, horizontal=True)
 
-    , part = st.radio("部位を選択", PART_OPTIONS, horizontal=True)
+    part = st.radio("部位を選択", PART_OPTIONS, horizontal=True)
 
     character = st.text_input(
         "映っているキャラクター名 (マイキャラ / アニメキャラ名)"
