@@ -371,7 +371,7 @@ elif menu == "🎯 弾別コンプリート状況":
   # 弾ごとのマスターCSVのURL（ここにGoogleドライブやGitHubのCSVリンクを指定してください）
   bullet_csv_urls = {
       "おねがい2だん": (
-          "https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main/onegai2_master.csv"  # ←ご自身のURLに変更してください
+          "https://github.com/tamuramaro114/aipuri-verse/blob/main/aipri_master/onegai2_master.csv"  # ←ご自身のURLに変更してください
       ),
       # 例として他の弾を追加する場合はここに増やせます
       # "リング1だん": "https://raw.githubusercontent.com/..."
