@@ -358,11 +358,11 @@ if menu == "コレクション一覧・検索":
           try:
             image_bytes = base64.b64decode(row["image_base64"])
             encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
-            # 幅100%いっぱいに拡大しつつ、ドットをシャープに保つCSS
+            # QRコードを大きく、ドットをシャープ（pixelated）に表示するスタイル
             st.markdown(
                 f"""
-                        <div style="background-color: white; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 0.5rem; text-align: center;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 100%; max-width: 300px; image-rendering: pixelated; image-rendering: crisp-edges;">
+                        <div style="background-color: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem;">
+                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 100%; max-width: 280px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
                         </div>
                         """,
                 unsafe_allow_html=True,
@@ -506,13 +506,13 @@ elif menu == "プリフォトを追加する":
     else:
       st.warning(msg)
 
-    st.write("🖼️ **変換後のプレビュー (大きく表示):**")
+    st.write("🖼️ **変換後のプレビュー (拡大・高精細表示):**")
     encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
-    # プレビュー画面でも十分大きく、かつシャープに表示するCSS
+    # プレビュー画面でも十分に大きく、シャープに表示するスタイル
     st.markdown(
         f"""
         <div style="background-color: white; padding: 15px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
-            <img src="data:image/png;base64,{encoded_preview}" width="300" style="image-rendering: pixelated; image-rendering: crisp-edges;">
+            <img src="data:image/png;base64,{encoded_preview}" width="320" style="image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
         </div>
         """,
         unsafe_allow_html=True,
