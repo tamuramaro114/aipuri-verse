@@ -228,10 +228,18 @@ ATTRIBUTE_OPTIONS = [
     "ミルフィー",
     "グミ",
 ]
-PART_OPTIONS = ["アクセ", "ワンピース", "トップス", "ボトムス", "シューズ"]
+# 部位に「フルコーデ」を追加しました
+PART_OPTIONS = [
+    "アクセ",
+    "ワンピース",
+    "トップス",
+    "ボトムス",
+    "シューズ",
+    "フルコーデ",
+]
 
 # ---------------------------------------------------------
-# 1. コレクション一覧・検索画面（検索・属性・キャラ名・並べ替え機能付き）
+# 1. コレクション一覧・検索画面（編集・削除機能付き）
 # ---------------------------------------------------------
 if menu == "コレクション一覧・検索":
   st.header("📖 マイ・プリフォトコレクション")
@@ -242,7 +250,6 @@ if menu == "コレクション一覧・検索":
     st.sidebar.markdown("### 🔍 検索・絞り込み・並べ替え")
     search_keyword = st.sidebar.text_input("コーデ名・キャラ名で検索")
 
-    # 属性（ジャンル名）フィルターの復活
     selected_attribute = st.sidebar.selectbox(
         "属性（ジャンル）で絞り込み", ["すべて"] + ATTRIBUTE_OPTIONS
     )
@@ -251,7 +258,6 @@ if menu == "コレクション一覧・検索":
         "弾数で絞り込み", ["すべて"] + list(data["bullet"].unique())
     )
 
-    # 並べ替え機能の復活
     sort_option = st.sidebar.selectbox(
         "並べ替え", ["登録順 (新しい順)", "登録順 (古い順)", "コーデ名順"]
     )
@@ -262,7 +268,6 @@ if menu == "コレクション一覧・検索":
 
     filtered_data = data.copy()
 
-    # 検索フィルター適用
     if search_keyword:
       filtered_data = filtered_data[
           filtered_data["code_name"].str.contains(search_keyword, na=False)
@@ -277,7 +282,6 @@ if menu == "コレクション一覧・検索":
     if filter_bullet != "すべて":
       filtered_data = filtered_data[filtered_data["bullet"] == filter_bullet]
 
-    # 並べ替え適用
     if sort_option == "登録順 (新しい順)":
       filtered_data = filtered_data.sort_values(by="id", ascending=False)
     elif sort_option == "登録順 (古い順)":
@@ -316,7 +320,6 @@ if menu == "コレクション一覧・検索":
         else:
           st.info("📷 画像なし")
 
-        # キャラ名・属性・弾数・部位の表示復活
         char_text = (
             f"👤 {row['character']}"
             if row.get("character", "") != ""
@@ -333,11 +336,67 @@ if menu == "コレクション一覧・検索":
             unsafe_allow_html=True,
         )
 
-        if st.button("削除", key=f"del_{row['id']}"):
-          data = data[data["id"] != row["id"]]
-          save_data(data)
-          st.success("削除しました！")
-          st.rerun()
+        # 編集・削除ボタンを2カラムで配置
+        b_col1, b_col2 = st.columns(2)
+        with b_col1:
+          if st.button("✏️ 編集", key=f"edit_btn_{row['id']}"):
+            st.session_state[f"editing_{row['id']}"] = True
+        with b_col2:
+          if st.button("🗑️ 削除", key=f"del_{row['id']}"):
+            data = data[data["id"] != row["id"]]
+            save_data(data)
+            st.success("削除しました！")
+            st.rerun()
+
+        # 編集フォーム（編集ボタンが押されたときのみ展開）
+        if st.session_state.get(f"editing_{row['id']}", False):
+          with st.form(key=f"edit_form_{row['id']}"):
+            st.markdown(f"**ID: {row['id']} の編集**")
+            new_code_name = st.text_input("コーデ名", value=row["code_name"])
+
+            # 既存の選択肢のインデックスを取得（範囲外エラー防止の安全策付き）
+            attr_idx = (
+                ATTRIBUTE_OPTIONS.index(row["attribute"])
+                if row["attribute"] in ATTRIBUTE_OPTIONS
+                else 0
+            )
+            bullet_idx = (
+                ALL_BULLET_OPTIONS.index(row["bullet"])
+                if row["bullet"] in ALL_BULLET_OPTIONS
+                else 0
+            )
+            part_idx = (
+                PART_OPTIONS.index(row.get("part", "アクセ"))
+                if row.get("part", "アクセ") in PART_OPTIONS
+                else 0
+            )
+
+            new_attribute = st.selectbox(
+                "属性", ATTRIBUTE_OPTIONS, index=attr_idx
+            )
+            new_bullet = st.selectbox("弾数", ALL_BULLET_OPTIONS, index=bullet_idx)
+            new_part = st.selectbox("部位", PART_OPTIONS, index=part_idx)
+            new_character = st.text_input(
+                "キャラクター名", value=row.get("character", "")
+            )
+
+            col_save, col_cancel = st.columns(2)
+            with col_save:
+              if st.form_submit_button("保存"):
+                data.loc[data["id"] == row["id"], "code_name"] = new_code_name
+                data.loc[data["id"] == row["id"], "attribute"] = new_attribute
+                data.loc[data["id"] == row["id"], "bullet"] = new_bullet
+                data.loc[data["id"] == row["id"], "part"] = new_part
+                data.loc[data["id"] == row["id"], "character"] = new_character
+                save_data(data)
+                st.session_state[f"editing_{row['id']}"] = False
+                st.success("更新しました！")
+                st.rerun()
+            with col_cancel:
+              if st.form_submit_button("キャンセル"):
+                st.session_state[f"editing_{row['id']}"] = False
+                st.rerun()
+
         st.markdown("---")
 
 # ---------------------------------------------------------
@@ -419,7 +478,6 @@ elif menu == "🎯 弾別コンプリート状況":
       "おねがい2だん": (
           "https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main/onegai2_master.csv"  # ←ご自身のURLに変更してください
       ),
-      # 他の弾のURLをここに自由に追加できます
   }
 
   selected_bullet_target = st.selectbox(
@@ -435,7 +493,6 @@ elif menu == "🎯 弾別コンプリート状況":
     )
   else:
     try:
-      # フォーマットエラーを防ぐためおまけとしてon_bad_linesなどのオプションも考慮
       master_df = pd.read_csv(csv_url, on_bad_lines="skip")
       owned_df = data[data["bullet"] == selected_bullet_target]
 
