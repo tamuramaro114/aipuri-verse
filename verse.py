@@ -231,7 +231,7 @@ ATTRIBUTE_OPTIONS = [
 PART_OPTIONS = ["アクセ", "ワンピース", "トップス", "ボトムス", "シューズ"]
 
 # ---------------------------------------------------------
-# 1. コレクション一覧・検索画面
+# 1. コレクション一覧・検索画面（検索・並べ替え機能付き）
 # ---------------------------------------------------------
 if menu == "コレクション一覧・検索":
   st.header("📖 マイ・プリフォトコレクション")
@@ -239,10 +239,16 @@ if menu == "コレクション一覧・検索":
   if data.empty:
     st.info("まだプリフォトが登録されていません。")
   else:
+    # 検索・フィルター・並べ替え操作用サイドバー項目
+    st.sidebar.markdown("### 🔍 検索・絞り込み")
+    search_keyword = st.sidebar.text_input("コーデ名・キャラ名で検索")
+    filter_bullet = st.sidebar.selectbox(
+        "弾数で絞り込み", ["すべて"] + list(data["bullet"].unique())
+    )
+
     cols_per_row = st.sidebar.slider(
         "横に並べるカードの数", min_value=2, max_value=6, value=3
     )
-    search_keyword = st.sidebar.text_input("コーデ名・キャラ名で検索")
 
     filtered_data = data.copy()
     if search_keyword:
@@ -250,6 +256,8 @@ if menu == "コレクション一覧・検索":
           filtered_data["code_name"].str.contains(search_keyword, na=False)
           | filtered_data["character"].str.contains(search_keyword, na=False)
       ]
+    if filter_bullet != "すべて":
+      filtered_data = filtered_data[filtered_data["bullet"] == filter_bullet]
 
     st.write(
         f"全 **{len(data)}** 枚中 / 表示件数: **{len(filtered_data)}** 枚"
@@ -368,13 +376,13 @@ elif menu == "🎯 弾別コンプリート状況":
       "外部（GitHubやGoogleドライブなど）に配置した各弾のマスターCSVを読み込み、所持状況をチェックします。"
   )
 
-  # 弾ごとのマスターCSVのURL（ここにGoogleドライブやGitHubのCSVリンクを指定してください）
+  # 各弾ごとの外部CSVのURLを設定する辞書
   bullet_csv_urls = {
       "おねがい2だん": (
           "https://github.com/tamuramaro114/aipuri-verse/blob/main/aipri_master/onegai2_master.csv"  # ←ご自身のURLに変更してください
       ),
-      # 例として他の弾を追加する場合はここに増やせます
-      # "リング1だん": "https://raw.githubusercontent.com/..."
+      # 他の弾を追加する場合はここに増やせます
+      # "1だん": "https://raw.githubusercontent.com/.../1dan_master.csv"
   }
 
   selected_bullet_target = st.selectbox(
@@ -390,10 +398,7 @@ elif menu == "🎯 弾別コンプリート状況":
     )
   else:
     try:
-      # 外部CSVの読み込み
       master_df = pd.read_csv(csv_url)
-
-      # ユーザーの所持データ（選択した弾に一致するもの）
       owned_df = data[data["bullet"] == selected_bullet_target]
 
       checked_list = []
