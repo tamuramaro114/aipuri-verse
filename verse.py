@@ -4,51 +4,89 @@ import streamlit as st
 import os
 import io
 import base64
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+import cv2
+import numpy as np
+import qrcode
 
-# --- Googleスプレッドシート連携の設定 ---
-SCOPE = [
-    'https://spreadsheets.google.com/feeds',
-    'https://www.googleapis.com/auth/drive'
-]
-
-def get_sheet_client():
-    if "gcp_service_account" in st.secrets:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
-    else:
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
-    
-    client = gspread.authorize(creds)
-    spreadsheet = client.open("aipri_data") 
-    return spreadsheet.sheet1
+# --- ローカルCSVファイルの設定 ---
+CSV_FILE = "aipri_data.csv"
 
 # データの読み込み関数
 def load_data():
-    try:
-        sheet = get_sheet_client()
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        if df.empty:
+    if os.path.exists(CSV_FILE):
+        try:
+            df = pd.read_csv(CSV_FILE)
+            if df.empty:
+                return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
+            if "part" not in df.columns:
+                df["part"] = "ワンピース"
+            if "image_base64" not in df.columns:
+                df["image_base64"] = ""
+            df["id"] = pd.to_numeric(df["id"], errors="coerce")
+            df["image_base64"] = df["image_base64"].fillna("").astype(str)
+            return df
+        except Exception as e:
+            st.error(f"CSVファイルの読み込みに失敗しました: {e}")
             return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
-        if "part" not in df.columns:
-            df["part"] = "ワンピース"
-        df["id"] = pd.to_numeric(df["id"], errors="coerce")
-        return df
-    except Exception as e:
-        st.error(f"スプレッドシートからの読み込みに失敗しました: {e}")
+    else:
         return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
 
-# データの保存関数
+# データの保存関数（ローカルCSV）
 def save_data(df):
     try:
-        sheet = get_sheet_client()
-        sheet.clear()
-        data_to_write = [df.columns.values.tolist()] + df.values.tolist()
-        sheet.update(data_to_write)
+        df.to_csv(CSV_FILE, index=False)
     except Exception as e:
-        st.error(f"スプレッドシートへの保存に失敗しました: {e}")
+        st.error(f"CSVファイルへの保存に失敗しました: {e}")
+
+# アップロードされた画像からQRコードを読み取り、クリーンなQRコード画像を再生成する関数
+def process_and_optimize_qr(uploaded_image):
+    try:
+        image = Image.open(uploaded_image)
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+        
+        img_np = np.array(image)
+        if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+            img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        else:
+            img_cv = img_np
+
+        detector = cv2.QRCodeDetector()
+        data, bbox, rectified_image = detector.detectAndDecode(img_cv)
+
+        if data:
+            # 読み取ったデータから、qrcodeライブラリで高精度かつ超軽量なQRコード画像を再生成
+            qr = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=4,   # 画面で見やすいように適度な大きさにしつつ、容量は数KB以下に収める
+                border=2,
+            )
+            qr.add_data(data)
+            qr.make(fit=True)
+            
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            
+            output = io.BytesIO()
+            qr_img.save(output, format="PNG")
+            return output.getvalue(), "success", f"QRコードを正常に読み取りました！ (データ内容: {data[:20]}...)"
+        else:
+            # 万が一QRコードが読み取れなかった場合のフォールバック（画像を縮小して綺麗に保存）
+            max_size = 500
+            if max(image.size) > max_size:
+                image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            
+            output = io.BytesIO()
+            image.save(output, format="JPEG", quality=80)
+            return output.getvalue(), "fallback", "⚠️ QRコードの読み取りに失敗したため、画像を圧縮して保存しました。"
+
+    except Exception as e:
+        image = Image.open(uploaded_image)
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+        output = io.BytesIO()
+        image.save(output, format="JPEG", quality=80)
+        return output.getvalue(), "error", f"処理中にエラーが発生しました: {e}"
 
 data = load_data()
 
@@ -56,11 +94,10 @@ st.title("✨ アイプリバース プリフォト管理アプリ ✨")
 st.sidebar.header("メニュー")
 menu = st.sidebar.radio("選択してください", ["コレクション一覧・検索", "プリフォトを追加する"])
 
-# --- サイドバー：データバックアップ（CSV）機能 ---
+# --- サイドバー：データ管理（CSVバックアップ・復元） ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 データ管理（バックアップ）")
 
-# 1. CSVダウンロード機能
 if not data.empty:
     csv_data = data.to_csv(index=False).encode("utf-8")
     st.sidebar.download_button(
@@ -70,17 +107,15 @@ if not data.empty:
         mime="text/csv",
     )
 
-# 2. CSVアップロード（復元・上書き）機能
-uploaded_csv = st.sidebar.file_uploader("📤 CSVからデータを復元", type=["csv"])
+uploaded_csv = st.sidebar.file_uploader("📤 CSVからデータを復元・追加", type=["csv"])
 if uploaded_csv is not None:
     try:
         restored_df = pd.read_csv(uploaded_csv)
-        # 必要なカラムが揃っているか簡易チェック
         required_cols = ["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"]
         if all(col in restored_df.columns for col in required_cols):
-            if st.sidebar.button("⚠️ このCSVデータでスプレッドシートを上書きする"):
+            if st.sidebar.button("⚠️ このCSVデータで上書きする"):
                 save_data(restored_df)
-                st.sidebar.success("データを復元・上書きしました！画面を更新してください。")
+                st.sidebar.success("データを上書きしました！画面を更新してください。")
                 st.rerun()
         else:
             st.sidebar.error("CSVのフォーマットが正しくありません。")
@@ -222,7 +257,7 @@ if menu == "コレクション一覧・検索":
                     except:
                         st.warning("画像読み込みエラー")
                 else:
-                    st.warning("画像なし")
+                    st.info("📷 画像なし")
                 
                 info_html = f"""
                 <div style='font-size: {body_size}; line-height: 1.4; margin-bottom: 0.5rem;'>
@@ -287,8 +322,8 @@ if menu == "コレクション一覧・検索":
                             data.loc[data["id"] == row["id"], "character"] = new_character
                             
                             if new_image is not None:
-                                bytes_data = new_image.getvalue()
-                                new_base64 = base64.b64encode(bytes_data).decode("utf-8")
+                                opt_bytes, _, _ = process_and_optimize_qr(new_image)
+                                new_base64 = base64.b64encode(opt_bytes).decode("utf-8")
                                 data.loc[data["id"] == row["id"], "image_base64"] = new_base64
                             
                             save_data(data)
@@ -309,12 +344,22 @@ elif menu == "プリフォトを追加する":
 
     uploaded_image = st.file_uploader("プリフォトの画像 (スマホの写真など)", type=["jpg", "png", "jpeg"])
 
+    processed_bytes = None
     if uploaded_image is not None:
         file_base_name = os.path.splitext(uploaded_image.name)[0]
         st.info(f"📁 アップロードされたファイル名: `{uploaded_image.name}`")
         
-        st.write("🖼️ **登録される画像プレビュー:**")
-        st.image(uploaded_image, width=250)
+        # QRコード自動解析・再生成処理の実行
+        with st.spinner("🤖 QRコードを解析し、高精度・超軽量な画像に変換中..."):
+            processed_bytes, status, msg = process_and_optimize_qr(uploaded_image)
+            
+        if status == "success":
+            st.success(msg)
+        else:
+            st.warning(msg)
+
+        st.write("🖼️ **変換後のプレビュー (軽量化済み):**")
+        st.image(processed_bytes, width=250)
 
         if st.button("✨ ファイル名をコーデ名として使う"):
             st.session_state["code_name_input"] = file_base_name
@@ -341,13 +386,12 @@ elif menu == "プリフォトを追加する":
         if submitted:
             if not code_name:
                 st.error("コーデ名を入力してください。")
+            elif uploaded_image is None or processed_bytes is None:
+                st.error("画像をアップロードしてください。")
             else:
                 new_id = int(data["id"].max() + 1) if not data.empty and not pd.isna(data["id"].max()) else 1
                 
-                image_base64 = ""
-                if uploaded_image is not None:
-                    bytes_data = uploaded_image.getvalue()
-                    image_base64 = base64.b64encode(bytes_data).decode("utf-8")
+                image_base64 = base64.b64encode(processed_bytes).decode("utf-8")
 
                 new_row = pd.DataFrame({
                     "id": [new_id],
