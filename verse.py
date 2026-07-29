@@ -512,6 +512,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
         checked_list.append({
             "コーデ名": code_name,
+            "タイプ": attribute,
             "部位": part,
             "状態": "✅ 所持" if is_owned else "❌ 未所持",
         })
