@@ -476,7 +476,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
   bullet_csv_urls = {
       "おねがい2だん": (
-          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai2_master.csv"  # ←ご自身のURLに変更してください
+          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai2_master.csv"
       ),
   }
 
@@ -489,10 +489,10 @@ elif menu == "🎯 弾別コンプリート状況":
   if not csv_url or "YOUR_NAME" in csv_url:
     st.warning(
         "⚠️ 選択した弾のCSVファイルのURLが正しく設定されていません。"
-        "コード内の `bullet_csv_urls` に正しいGitHub（Raw）またはGoogleドライブのCSVリンクを設定してください。"
+        "コード内の `bullet_csv_urls` に正しいGitHub（Raw）のリンクを設定してください。"
     )
   else:
-   try:
+    try:
       master_df = pd.read_csv(
           csv_url, on_bad_lines="skip", encoding="utf-8-sig", skipinitialspace=True
       )
@@ -506,8 +506,6 @@ elif menu == "🎯 弾別コンプリート状況":
         code_name = str(row["code_name"]).strip()
         part = str(row["part"]).strip()
 
-        # もしマスターCSVにも attribute 列が存在する場合はそれも考慮できます
-        # 今回はエラー回避のため、安全に code_name と part で判定する例です
         match = owned_df[
             (owned_df["code_name"] == code_name) & (owned_df["part"] == part)
         ]
@@ -547,7 +545,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
       st.dataframe(display_df, use_container_width=True)
 
-except Exception as e:
+    except Exception as e:
       st.error(
           f"外部CSVの読み込みに失敗しました。URLやファイルの公開設定をご確認ください: {e}"
       )
