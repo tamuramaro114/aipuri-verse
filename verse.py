@@ -111,7 +111,7 @@ def save_data(df):
     st.error(f"Googleスプレッドシートへの保存に失敗しました: {e}")
 
 
-# アップロードされた画像からQRコードを正確に切り出し、元のドットサイズのままクリーンな画像にする関数
+# アップロードされた画像からQRコードを正確に抽出・高解像度化して保存する関数
 def process_and_optimize_qr(uploaded_image):
   try:
     image = Image.open(uploaded_image)
@@ -133,26 +133,35 @@ def process_and_optimize_qr(uploaded_image):
       else:
         rect_gray = rectified_image
 
+      # 2値化（きれいな白黒に変換）
       _, thresh = cv2.threshold(
           rect_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
       )
-      # 画素は勝手に拡大せず、抽出された生データのままPIL画像化して保存
       qr_pil = Image.fromarray(thresh).convert("1")
 
+      # スプレッドシートの容量（文字数制限）に余裕で収まる範囲で、ドットをくっきり保ったまま画像を大きく拡大 (例: 25倍)
+      scale_factor = 25
+      new_width = qr_pil.width * scale_factor
+      new_height = qr_pil.height * scale_factor
+      qr_large = qr_pil.resize(
+          (new_width, new_height), Image.Resampling.NEAREST
+      )
+
       output = io.BytesIO()
-      qr_pil.save(output, format="PNG")
+      qr_large.save(output, format="PNG")
       return (
           output.getvalue(),
           "success",
-          f"QRコードのドット配置をそのまま抽出し最適化しました！ (データ: {data[:20]}...)",
+          f"QRコードを高解像度（拡大版）で抽出・最適化しました！ (データ:"
+          f" {data[:20]}...)",
       )
     else:
-      max_size = 500
+      max_size = 800
       if max(image.size) > max_size:
         image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
       output = io.BytesIO()
-      image.save(output, format="JPEG", quality=80)
+      image.save(output, format="JPEG", quality=85)
       return (
           output.getvalue(),
           "fallback",
@@ -165,7 +174,7 @@ def process_and_optimize_qr(uploaded_image):
     if image.mode in ("RGBA", "P"):
       image = image.convert("RGB")
     output = io.BytesIO()
-    image.save(output, format="JPEG", quality=80)
+    image.save(output, format="JPEG", quality=85)
     return output.getvalue(), "error", f"処理中にエラーが発生しました: {e}"
 
 
@@ -359,11 +368,11 @@ if menu == "コレクション一覧・検索":
           try:
             image_bytes = base64.b64decode(row["image_base64"])
             encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
-            # 余白を増やさず、画像そのものの表示サイズを約10倍の大きさ（width: 350px）で表示しつつドットをシャープに維持
+            # QRコードを大きく、ドットをシャープに表示
             st.markdown(
                 f"""
-                        <div style="text-align: center; margin-bottom: 0.5rem; overflow-x: auto;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 350px; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
+                        <div style="background-color: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem;">
+                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
                         </div>
                         """,
                 unsafe_allow_html=True,
@@ -499,7 +508,7 @@ elif menu == "プリフォトを追加する":
     file_base_name = os.path.splitext(uploaded_image.name)[0]
     st.info(f"📁 アップロードされたファイル名: `{uploaded_image.name}`")
 
-    with st.spinner("🤖 QRコードのドット配置を抽出して最適化中..."):
+    with st.spinner("🤖 QRコードを高解像度化・最適化学習中..."):
       processed_bytes, status, msg = process_and_optimize_qr(uploaded_image)
 
     if status == "success":
@@ -507,13 +516,12 @@ elif menu == "プリフォトを追加する":
     else:
       st.warning(msg)
 
-    st.write("🖼️ **変換後のプレビュー (約10倍・高精細表示):**")
+    st.write("🖼️ **変換後のプレビュー (高解像度・シャープ表示):**")
     encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
-    # プレビューでも余白を作らず約10倍の大きさでシャープに表示
     st.markdown(
         f"""
-        <div style="text-align: center; margin-bottom: 1rem;">
-            <img src="data:image/png;base64,{encoded_preview}" style="width: 350px; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
+        <div style="background-color: white; padding: 15px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
+            <img src="data:image/png;base64,{encoded_preview}" width="350" style="image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
         </div>
         """,
         unsafe_allow_html=True,
