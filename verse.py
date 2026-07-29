@@ -231,7 +231,7 @@ ATTRIBUTE_OPTIONS = [
 PART_OPTIONS = ["アクセ", "ワンピース", "トップス", "ボトムス", "シューズ"]
 
 # ---------------------------------------------------------
-# 1. コレクション一覧・検索画面（検索・並べ替え機能付き）
+# 1. コレクション一覧・検索画面（検索・属性・キャラ名・並べ替え機能付き）
 # ---------------------------------------------------------
 if menu == "コレクション一覧・検索":
   st.header("📖 マイ・プリフォトコレクション")
@@ -239,11 +239,21 @@ if menu == "コレクション一覧・検索":
   if data.empty:
     st.info("まだプリフォトが登録されていません。")
   else:
-    # 検索・フィルター・並べ替え操作用サイドバー項目
-    st.sidebar.markdown("### 🔍 検索・絞り込み")
+    st.sidebar.markdown("### 🔍 検索・絞り込み・並べ替え")
     search_keyword = st.sidebar.text_input("コーデ名・キャラ名で検索")
+
+    # 属性（ジャンル名）フィルターの復活
+    selected_attribute = st.sidebar.selectbox(
+        "属性（ジャンル）で絞り込み", ["すべて"] + ATTRIBUTE_OPTIONS
+    )
+
     filter_bullet = st.sidebar.selectbox(
         "弾数で絞り込み", ["すべて"] + list(data["bullet"].unique())
+    )
+
+    # 並べ替え機能の復活
+    sort_option = st.sidebar.selectbox(
+        "並べ替え", ["登録順 (新しい順)", "登録順 (古い順)", "コーデ名順"]
     )
 
     cols_per_row = st.sidebar.slider(
@@ -251,13 +261,29 @@ if menu == "コレクション一覧・検索":
     )
 
     filtered_data = data.copy()
+
+    # 検索フィルター適用
     if search_keyword:
       filtered_data = filtered_data[
           filtered_data["code_name"].str.contains(search_keyword, na=False)
           | filtered_data["character"].str.contains(search_keyword, na=False)
       ]
+
+    if selected_attribute != "すべて":
+      filtered_data = filtered_data[
+          filtered_data["attribute"] == selected_attribute
+      ]
+
     if filter_bullet != "すべて":
       filtered_data = filtered_data[filtered_data["bullet"] == filter_bullet]
+
+    # 並べ替え適用
+    if sort_option == "登録順 (新しい順)":
+      filtered_data = filtered_data.sort_values(by="id", ascending=False)
+    elif sort_option == "登録順 (古い順)":
+      filtered_data = filtered_data.sort_values(by="id", ascending=True)
+    elif sort_option == "コーデ名順":
+      filtered_data = filtered_data.sort_values(by="code_name", ascending=True)
 
     st.write(
         f"全 **{len(data)}** 枚中 / 表示件数: **{len(filtered_data)}** 枚"
@@ -269,7 +295,7 @@ if menu == "コレクション一覧・検索":
 
       with col[idx % cols_per_row]:
         st.markdown(
-            f"<p style='font-weight: bold;'>{row['code_name']}</p>",
+            f"<p style='font-weight: bold; margin-bottom: 0.2rem;'>{row['code_name']}</p>",
             unsafe_allow_html=True,
         )
 
@@ -279,7 +305,7 @@ if menu == "コレクション一覧・検索":
             encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
             st.markdown(
                 f"""
-                        <div style="background-color: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem;">
+                        <div style="background-color: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.3rem;">
                             <img src="data:image/png;base64,{encoded_grid_img}" style="width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
                         </div>
                         """,
@@ -290,8 +316,21 @@ if menu == "コレクション一覧・検索":
         else:
           st.info("📷 画像なし")
 
+        # キャラ名・属性・弾数・部位の表示復活
+        char_text = (
+            f"👤 {row['character']}"
+            if row.get("character", "") != ""
+            else "👤 なし"
+        )
+        attr_text = (
+            f"✨ {row['attribute']}"
+            if row.get("attribute", "") != ""
+            else ""
+        )
         st.markdown(
-            f"🏷️ 弾数: {row['bullet']} / 部位: {row.get('part', '')}"
+            f"<p style='font-size: 0.85rem; color: #555; margin: 0;'>{char_text} / {attr_text}</p>"
+            f"<p style='font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} / {row.get('part', '')}</p>",
+            unsafe_allow_html=True,
         )
 
         if st.button("削除", key=f"del_{row['id']}"):
@@ -376,13 +415,11 @@ elif menu == "🎯 弾別コンプリート状況":
       "外部（GitHubやGoogleドライブなど）に配置した各弾のマスターCSVを読み込み、所持状況をチェックします。"
   )
 
-  # 各弾ごとの外部CSVのURLを設定する辞書
   bullet_csv_urls = {
       "おねがい2だん": (
-          "https://github.com/tamuramaro114/aipuri-verse/blob/main/aipri_master/onegai2_master.csv"  # ←ご自身のURLに変更してください
+          "https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main/onegai2_master.csv"  # ←ご自身のURLに変更してください
       ),
-      # 他の弾を追加する場合はここに増やせます
-      # "1だん": "https://raw.githubusercontent.com/.../1dan_master.csv"
+      # 他の弾のURLをここに自由に追加できます
   }
 
   selected_bullet_target = st.selectbox(
@@ -398,15 +435,16 @@ elif menu == "🎯 弾別コンプリート状況":
     )
   else:
     try:
-      master_df = pd.read_csv(csv_url)
+      # フォーマットエラーを防ぐためおまけとしてon_bad_linesなどのオプションも考慮
+      master_df = pd.read_csv(csv_url, on_bad_lines="skip")
       owned_df = data[data["bullet"] == selected_bullet_target]
 
       checked_list = []
       owned_count = 0
 
       for _, row in master_df.iterrows():
-        code_name = row["code_name"]
-        part = row["part"]
+        code_name = str(row["code_name"]).strip()
+        part = str(row["part"]).strip()
 
         match = owned_df[
             (owned_df["code_name"] == code_name) & (owned_df["part"] == part)
