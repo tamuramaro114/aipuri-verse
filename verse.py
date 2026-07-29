@@ -547,7 +547,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
       st.dataframe(display_df, use_container_width=True)
 
-    except Exception as e:
+except Exception as e:
       st.error(
           f"外部CSVの読み込みに失敗しました。URLやファイルの公開設定をご確認ください: {e}"
       )
