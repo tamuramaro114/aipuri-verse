@@ -111,7 +111,7 @@ def save_data(df):
     st.error(f"Googleスプレッドシートへの保存に失敗しました: {e}")
 
 
-# アップロードされた画像からQRコードを正確に切り出す関数（※保存する画像データ自体のサイズは変えません）
+# アップロードされた画像からQRコードを正確に切り出し、元の高精細1ドット画像のまま抽出する関数
 def process_and_optimize_qr(uploaded_image):
   try:
     image = Image.open(uploaded_image)
@@ -136,6 +136,7 @@ def process_and_optimize_qr(uploaded_image):
       _, thresh = cv2.threshold(
           rect_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
       )
+      # 保存時は余計な拡大をせず、純粋な最小1ドット単位（オリジナルサイズ）のままバイナリ化
       qr_pil = Image.fromarray(thresh).convert("1")
 
       output = io.BytesIO()
@@ -358,11 +359,11 @@ if menu == "コレクション一覧・検索":
           try:
             image_bytes = base64.b64decode(row["image_base64"])
             encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
-            # 【重要】画像データ自体は変えず、表示時の拡大倍率（width）を十分に大きくしてドットをくっきり表示
+            # 保存データのサイズは変えず、表示時のみCSSのwidth指定やスケーリング（実質50倍相当のクッキリ表示）を適用
             st.markdown(
                 f"""
-                        <div style="background-color: #ffffff; padding: 4px; text-align: center; margin-bottom: 0.5rem;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 280px; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+                        <div style="background-color: #ffffff; padding: 10px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem; overflow: auto;">
+                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 500%; max-width: none; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
                         </div>
                         """,
                 unsafe_allow_html=True,
@@ -506,13 +507,13 @@ elif menu == "プリフォトを追加する":
     else:
       st.warning(msg)
 
-    st.write("🖼️ **変換後のプレビュー (表示拡大・シャープ化):**")
+    st.write("🖼️ **変換後のプレビュー (拡大・高精細表示):**")
     encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
-    # プレビュー側の表示倍率も大きめに設定
+    # プレビュー画面でも同様に保存データそのものは小さく保ったまま大きく表示
     st.markdown(
         f"""
-        <div style="background-color: white; padding: 10px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
-            <img src="data:image/png;base64,{encoded_preview}" style="width: 320px; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+        <div style="background-color: white; padding: 15px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center; overflow: auto; max-width: 100%;">
+            <img src="data:image/png;base64,{encoded_preview}" style="width: 500%; max-width: none; image-rendering: pixelated; image-rendering: crisp-edges; display: inline-block;">
         </div>
         """,
         unsafe_allow_html=True,
