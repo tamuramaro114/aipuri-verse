@@ -476,7 +476,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
   bullet_csv_urls = {
       "おねがい2だん": (
-          "https://github.com/tamuramaro114/aipuri-verse/blob/main/aipri_master/onegai2_master.csv"  # ←ご自身のURLに変更してください
+          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/blob/main/aipri_master/onegai2_master.csv"  # ←ご自身のURLに変更してください
       ),
   }
 
