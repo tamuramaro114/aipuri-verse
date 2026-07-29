@@ -20,15 +20,18 @@ SCOPES = [
 @st.cache_resource
 def init_gspread():
   try:
+    # st.secrets["gcp_service_account"] から認証情報を取得
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     client = gspread.authorize(creds)
 
+    # Secretsのセクション内、またはルートのどちらからでも安全に取得
     if "sheet_name" in st.secrets.get("gcp_service_account", {}):
       target = st.secrets["gcp_service_account"]["sheet_name"]
     else:
       target = st.secrets.get("sheet_name", "aipri_database")
 
+    # ID（キー）かファイル名かで開く方法を自動で切り替え
     if len(target) > 30 and "/" not in target:
       sheet = client.open_by_key(target).sheet1
     else:
@@ -42,6 +45,7 @@ def init_gspread():
     return None
 
 
+# データの読み込み関数（Googleスプレッドシートから取得）
 def load_data():
   sheet = init_gspread()
   if sheet is None:
@@ -91,6 +95,7 @@ def load_data():
     ])
 
 
+# データの保存関数（Googleスプレッドシートへ書き込み）
 def save_data(df):
   sheet = init_gspread()
   if sheet is None:
@@ -106,6 +111,7 @@ def save_data(df):
     st.error(f"Googleスプレッドシートへの保存に失敗しました: {e}")
 
 
+# アップロードされた画像からQRコードを正確に切り出す関数（※保存する画像データ自体のサイズは変えません）
 def process_and_optimize_qr(uploaded_image):
   try:
     image = Image.open(uploaded_image)
@@ -149,7 +155,8 @@ def process_and_optimize_qr(uploaded_image):
       return (
           output.getvalue(),
           "fallback",
-          "⚠️ QRコードの検出に失敗したため、画像を圧縮して保存しました。",
+          "⚠️"
+          " QRコードの検出に失敗したため、画像を圧縮して保存しました。",
       )
 
   except Exception as e:
@@ -169,6 +176,7 @@ menu = st.sidebar.radio(
     "選択してください", ["コレクション一覧・検索", "プリフォトを追加する"]
 )
 
+# --- サイドバー：データ管理 ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 データ管理")
 
@@ -183,6 +191,7 @@ if not data.empty:
 
 st.sidebar.markdown("---")
 
+# 弾数や属性などの選択肢定義
 NORMAL_BULLET_OPTIONS = []
 for i in range(1, 7):
   NORMAL_BULLET_OPTIONS.append(f"{i}だん")
@@ -349,11 +358,11 @@ if menu == "コレクション一覧・検索":
           try:
             image_bytes = base64.b64decode(row["image_base64"])
             encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
-            # 表示サイズを大きく（width: 100% かつ max-width や min-width でしっかり拡大）
+            # 【重要】画像データ自体は変えず、表示時の拡大倍率（width）を十分に大きくしてドットをくっきり表示
             st.markdown(
                 f"""
-                        <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 1000%; max-width: 240px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+                        <div style="background-color: #ffffff; padding: 4px; text-align: center; margin-bottom: 0.5rem;">
+                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 280px; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
                         </div>
                         """,
                 unsafe_allow_html=True,
@@ -497,12 +506,13 @@ elif menu == "プリフォトを追加する":
     else:
       st.warning(msg)
 
-    st.write("🖼️ **変換後のプレビュー (拡大・高精細表示):**")
+    st.write("🖼️ **変換後のプレビュー (表示拡大・シャープ化):**")
     encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
+    # プレビュー側の表示倍率も大きめに設定
     st.markdown(
         f"""
-        <div style="background-color: white; padding: 20px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
-            <img src="data:image/png;base64,{encoded_preview}" width="280" style="image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+        <div style="background-color: white; padding: 10px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
+            <img src="data:image/png;base64,{encoded_preview}" style="width: 320px; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
         </div>
         """,
         unsafe_allow_html=True,
@@ -528,7 +538,7 @@ elif menu == "プリフォトを追加する":
     else:
       bullet = st.radio("弾数を選択", NORMAL_BULLET_OPTIONS, horizontal=True)
 
-    part = st.radio("部位を選択", PART_OPTIONS, horizontal=True)
+    , part = st.radio("部位を選択", PART_OPTIONS, horizontal=True)
 
     character = st.text_input(
         "映っているキャラクター名 (マイキャラ / アニメキャラ名)"
