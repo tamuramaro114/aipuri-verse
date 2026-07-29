@@ -492,8 +492,11 @@ elif menu == "🎯 弾別コンプリート状況":
         "コード内の `bullet_csv_urls` に正しいGitHub（Raw）またはGoogleドライブのCSVリンクを設定してください。"
     )
   else:
-    try:
-      master_df = pd.read_csv(csv_url, on_bad_lines="skip")
+   try:
+      master_df = pd.read_csv(
+          csv_url, on_bad_lines="skip", encoding="utf-8-sig", skipinitialspace=True
+      )
+      master_df.columns = master_df.columns.str.strip()
       owned_df = data[data["bullet"] == selected_bullet_target]
 
       checked_list = []
@@ -503,6 +506,8 @@ elif menu == "🎯 弾別コンプリート状況":
         code_name = str(row["code_name"]).strip()
         part = str(row["part"]).strip()
 
+        # もしマスターCSVにも attribute 列が存在する場合はそれも考慮できます
+        # 今回はエラー回避のため、安全に code_name と part で判定する例です
         match = owned_df[
             (owned_df["code_name"] == code_name) & (owned_df["part"] == part)
         ]
@@ -512,7 +517,6 @@ elif menu == "🎯 弾別コンプリート状況":
 
         checked_list.append({
             "コーデ名": code_name,
-            "タイプ": attribute,
             "部位": part,
             "状態": "✅ 所持" if is_owned else "❌ 未所持",
         })
