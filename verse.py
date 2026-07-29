@@ -122,26 +122,32 @@ def process_and_optimize_qr(uploaded_image):
     detector = cv2.QRCodeDetector()
     data, bbox, rectified_image = detector.detectAndDecode(img_cv)
 
-    if data:
-      # box_size=1 にすることで、1ドット（1モジュール）＝1ピクセルの純粋なQRコードを作成
-      qr = qrcode.QRCode(
-          version=None,
-          error_correction=qrcode.constants.ERROR_CORRECT_M,
-          box_size=1,
-          border=2,
-      )
-      qr.add_data(data)
-      qr.make(fit=True)
+    # 1. QRコードが検出され、rectified_image（補正画像）が取得できた場合
+    if data and rectified_image is not None and rectified_image.size > 0:
+      # 8bitグレースケールに変換
+      if len(rectified_image.shape) == 3:
+        rect_gray = cv2.cvtColor(rectified_image, cv2.COLOR_BGR2GRAY)
+      else:
+        rect_gray = rectified_image
 
-      qr_img = qr.make_image(fill_color="black", back_color="white")
+      # 2値化（白黒ームに綺麗に整形）
+      _, thresh = cv2.threshold(
+          rect_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+      )
+
+      # モジュール（ドット）のグリッドサイズを推定して綺麗にリサイズ、またはそのまま1ドット単位へ調整
+      # ここではクリーンなモノクロPIL画像に変換
+      qr_pil = Image.fromarray(thresh).convert("1")
 
       output = io.BytesIO()
-      qr_img.save(output, format="PNG")
+      qr_pil.save(output, format="PNG")
       return (
           output.getvalue(),
           "success",
-          f"QRコードを1ドット単位で完璧に再構築しました！ (データ: {data[:20]}...)",
+          f"QRコードのドット配置をそのまま抽出し最適化しました！ (データ: {data[:20]}...)",
       )
+
+    # 2. 万が一検出できなかった場合のフォールバック
     else:
       max_size = 500
       if max(image.size) > max_size:
@@ -152,8 +158,7 @@ def process_and_optimize_qr(uploaded_image):
       return (
           output.getvalue(),
           "fallback",
-          "⚠️"
-          " QRコードの読み取りに失敗したため、画像をそのまま圧縮して保存しました。",
+          "⚠️ QRコードの検出に失敗したため、画像を圧縮して保存しました。",
       )
 
   except Exception as e:
