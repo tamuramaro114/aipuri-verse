@@ -332,7 +332,7 @@ if menu == "コレクション一覧・検索":
         )
         st.markdown(
             f"<p style='font-size: 0.85rem; color: #555; margin: 0;'>{char_text} / {attr_text}</p>"
-            f"<p style='font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} / {row.get('part', '')}</p>",
+            f"<p style='font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} /👗 {row.get('part', '')}</p>",
             unsafe_allow_html=True,
         )
 
