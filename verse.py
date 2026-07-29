@@ -5,13 +5,12 @@ import cv2
 from google.oauth2.service_account import Credentials
 import gspread
 import numpy as np
-import pandas as pd  # ←ここが抜けていないか確認！
+import pandas as pd
 from PIL import Image
 import qrcode
 import streamlit as st
 
 # --- Googleスプレッドシート & 認証の設定 ---
-# Streamlit Secrets (st.secrets) を使用してGoogleスプレッドシートに接続します
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -26,13 +25,22 @@ def init_gspread():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     client = gspread.authorize(creds)
 
-    sheet_name = st.secrets.get("sheet_name", "aipri_database")
-    sheet = client.open(sheet_name).sheet1
+    # Secretsのセクション内、またはルートのどちらからでも安全に取得
+    if "sheet_name" in st.secrets.get("gcp_service_account", {}):
+      target = st.secrets["gcp_service_account"]["sheet_name"]
+    else:
+      target = st.secrets.get("sheet_name", "aipri_database")
+
+    # ID（キー）かファイル名かで開く方法を自動で切り替え
+    if len(target) > 30 and "/" not in target:
+      sheet = client.open_by_key(target).sheet1
+    else:
+      sheet = client.open(target).sheet1
+
     return sheet
   except Exception as e:
     st.error(
-        f"Googleスプレッドシートへの接続に失敗しました。Secretsの設定を確認してください:"
-        f" {e}"
+        f"Googleスプレッドシートへの接続に失敗しました。Secretsの設定や共有設定を確認してください: {e}"
     )
     return None
 
