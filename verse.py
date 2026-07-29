@@ -353,7 +353,7 @@ if menu == "コレクション一覧・検索":
             st.markdown(
                 f"""
                         <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.5rem;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 100%; max-width: 240px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 1000%; max-width: 240px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
                         </div>
                         """,
                 unsafe_allow_html=True,
