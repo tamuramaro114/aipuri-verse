@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import io
 import os
 import cv2
@@ -20,18 +20,15 @@ SCOPES = [
 @st.cache_resource
 def init_gspread():
   try:
-    # st.secrets["gcp_service_account"] から認証情報を取得
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     client = gspread.authorize(creds)
 
-    # Secretsのセクション内、またはルートのどちらからでも安全に取得
     if "sheet_name" in st.secrets.get("gcp_service_account", {}):
       target = st.secrets["gcp_service_account"]["sheet_name"]
     else:
       target = st.secrets.get("sheet_name", "aipri_database")
 
-    # ID（キー）かファイル名かで開く方法を自動で切り替え
     if len(target) > 30 and "/" not in target:
       sheet = client.open_by_key(target).sheet1
     else:
@@ -45,7 +42,6 @@ def init_gspread():
     return None
 
 
-# データの読み込み関数（Googleスプレッドシートから取得）
 def load_data():
   sheet = init_gspread()
   if sheet is None:
@@ -95,7 +91,6 @@ def load_data():
     ])
 
 
-# データの保存関数（Googleスプレッドシートへ書き込み）
 def save_data(df):
   sheet = init_gspread()
   if sheet is None:
@@ -111,7 +106,7 @@ def save_data(df):
     st.error(f"Googleスプレッドシートへの保存に失敗しました: {e}")
 
 
-# アップロードされた画像からQRコードを読み取り、クリーンなQRコード画像を生成する関数
+# 1ドット1ピクセルの完全同一QRコードを生成する関数
 def process_and_optimize_qr(uploaded_image):
   try:
     image = Image.open(uploaded_image)
@@ -128,10 +123,11 @@ def process_and_optimize_qr(uploaded_image):
     data, bbox, rectified_image = detector.detectAndDecode(img_cv)
 
     if data:
+      # box_size=1 にすることで、1ドット（1モジュール）＝1ピクセルの純粋なQRコードを作成
       qr = qrcode.QRCode(
           version=None,
           error_correction=qrcode.constants.ERROR_CORRECT_M,
-          box_size=4,
+          box_size=1,
           border=2,
       )
       qr.add_data(data)
@@ -144,7 +140,7 @@ def process_and_optimize_qr(uploaded_image):
       return (
           output.getvalue(),
           "success",
-          f"QRコードを正常に読み取りました！ (データ内容: {data[:20]}...)",
+          f"QRコードを1ドット単位で完璧に再構築しました！ (データ: {data[:20]}...)",
       )
     else:
       max_size = 500
@@ -157,7 +153,7 @@ def process_and_optimize_qr(uploaded_image):
           output.getvalue(),
           "fallback",
           "⚠️"
-          " QRコードの読み取りに失敗したため、画像を圧縮して保存しました。",
+          " QRコードの読み取りに失敗したため、画像をそのまま圧縮して保存しました。",
       )
 
   except Exception as e:
@@ -177,7 +173,6 @@ menu = st.sidebar.radio(
     "選択してください", ["コレクション一覧・検索", "プリフォトを追加する"]
 )
 
-# --- サイドバー：データ管理 ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 データ管理")
 
@@ -192,7 +187,6 @@ if not data.empty:
 
 st.sidebar.markdown("---")
 
-# 弾数や属性などの選択肢定義
 NORMAL_BULLET_OPTIONS = []
 for i in range(1, 7):
   NORMAL_BULLET_OPTIONS.append(f"{i}だん")
@@ -236,9 +230,6 @@ PART_SORT_ORDER = {
     "シューズ": 5,
 }
 
-# ---------------------------------------------------------
-# 1. コレクション一覧・検索画面
-# ---------------------------------------------------------
 if menu == "コレクション一覧・検索":
   st.header("📖 マイ・プリフォトコレクション")
 
@@ -472,9 +463,6 @@ if menu == "コレクション一覧・検索":
 
         st.markdown("---")
 
-# ---------------------------------------------------------
-# 2. プリフォト追加画面
-# ---------------------------------------------------------
 elif menu == "プリフォトを追加する":
   st.header("📸 新しいプリフォトの登録")
 
@@ -490,7 +478,9 @@ elif menu == "プリフォトを追加する":
     file_base_name = os.path.splitext(uploaded_image.name)[0]
     st.info(f"📁 アップロードされたファイル名: `{uploaded_image.name}`")
 
-    with st.spinner("🤖 QRコードを解析し、高精度・超軽量な画像に変換中..."):
+    with st.spinner(
+        "🤖 QRコードを解析し、1ドット単位でクリーンなQRに再構築中..."
+    ):
       processed_bytes, status, msg = process_and_optimize_qr(uploaded_image)
 
     if status == "success":
@@ -498,8 +488,8 @@ elif menu == "プリフォトを追加する":
     else:
       st.warning(msg)
 
-    st.write("🖼️ **変換後のプレビュー (軽量化済み):**")
-    st.image(processed_bytes, width=250)
+    st.write("🖼️ **生成された1ドット構成QRコードのプレビュー:**")
+    st.image(processed_bytes, width=250, clamp=True)
 
     if st.button("✨ ファイル名をコーデ名として使う"):
       st.session_state["code_name_input"] = file_base_name
