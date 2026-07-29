@@ -471,12 +471,16 @@ elif menu == "プリフォトを追加する":
 elif menu == "🎯 弾別コンプリート状況":
   st.header("🎯 弾別コンプリート状況チェッカー")
   st.write(
-      "外部（GitHubやGoogleドライブなど）に配置した各弾のマスターCSVを読み込み、所持状況をチェックします。"
+      "外部（GitHubなど）に配置した各弾のマスターCSVを読み込み、所持状況をチェックします。"
   )
 
+  # 📌 ここに新しい弾のCSVを追加していくことができます
   bullet_csv_urls = {
-      "おねがい2だん": (
+      "おねがい2だ": (
           "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai2_master.csv"
+      ),
+      "おねがい3だん": (
+          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai3_master.csv"  # ←必要に応じてファイル名に合わせて変更してください
       ),
   }
 
@@ -504,8 +508,11 @@ elif menu == "🎯 弾別コンプリート状況":
 
       for _, row in master_df.iterrows():
         code_name = str(row["code_name"]).strip()
+        # CSVに attribute がない場合の安全策として .get を使用
+        attribute = str(row.get("attribute", "つうじょう")).strip()
         part = str(row["part"]).strip()
 
+        # 所持判定（コーデ名と部位で判定）
         match = owned_df[
             (owned_df["code_name"] == code_name) & (owned_df["part"] == part)
         ]
@@ -515,6 +522,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
         checked_list.append({
             "コーデ名": code_name,
+            "属性": attribute,  # ← 属性を表示項目に追加
             "部位": part,
             "状態": "✅ 所持" if is_owned else "❌ 未所持",
         })
