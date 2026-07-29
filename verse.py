@@ -4,36 +4,51 @@ import streamlit as st
 import os
 import io
 import base64
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-# --- ローカルCSVファイルの設定 ---
-CSV_FILE = "aipri_data.csv"
+# --- Googleスプレッドシート連携の設定 ---
+SCOPE = [
+    'https://spreadsheets.google.com/feeds',
+    'https://www.googleapis.com/auth/drive'
+]
+
+def get_sheet_client():
+    if "gcp_service_account" in st.secrets:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+    else:
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", SCOPE)
+    
+    client = gspread.authorize(creds)
+    spreadsheet = client.open("aipri_data") 
+    return spreadsheet.sheet1
 
 # データの読み込み関数
 def load_data():
-    if os.path.exists(CSV_FILE):
-        try:
-            df = pd.read_csv(CSV_FILE)
-            if df.empty:
-                return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
-            if "part" not in df.columns:
-                df["part"] = "ワンピース"
-            if "image_base64" not in df.columns:
-                df["image_base64"] = ""
-            df["id"] = pd.to_numeric(df["id"], errors="coerce")
-            df["image_base64"] = df["image_base64"].fillna("").astype(str)
-            return df
-        except Exception as e:
-            st.error(f"CSVファイルの読み込みに失敗しました: {e}")
+    try:
+        sheet = get_sheet_client()
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        if df.empty:
             return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
-    else:
+        if "part" not in df.columns:
+            df["part"] = "ワンピース"
+        df["id"] = pd.to_numeric(df["id"], errors="coerce")
+        return df
+    except Exception as e:
+        st.error(f"スプレッドシートからの読み込みに失敗しました: {e}")
         return pd.DataFrame(columns=["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"])
 
-# データの保存関数（ローカルCSV）
+# データの保存関数
 def save_data(df):
     try:
-        df.to_csv(CSV_FILE, index=False)
+        sheet = get_sheet_client()
+        sheet.clear()
+        data_to_write = [df.columns.values.tolist()] + df.values.tolist()
+        sheet.update(data_to_write)
     except Exception as e:
-        st.error(f"CSVファイルへの保存に失敗しました: {e}")
+        st.error(f"スプレッドシートへの保存に失敗しました: {e}")
 
 data = load_data()
 
@@ -41,10 +56,11 @@ st.title("✨ アイプリバース プリフォト管理アプリ ✨")
 st.sidebar.header("メニュー")
 menu = st.sidebar.radio("選択してください", ["コレクション一覧・検索", "プリフォトを追加する"])
 
-# --- サイドバー：データ管理（CSVバックアップ・復元） ---
+# --- サイドバー：データバックアップ（CSV）機能 ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 データ管理（バックアップ）")
 
+# 1. CSVダウンロード機能
 if not data.empty:
     csv_data = data.to_csv(index=False).encode("utf-8")
     st.sidebar.download_button(
@@ -54,15 +70,17 @@ if not data.empty:
         mime="text/csv",
     )
 
-uploaded_csv = st.sidebar.file_uploader("📤 CSVからデータを復元・追加", type=["csv"])
+# 2. CSVアップロード（復元・上書き）機能
+uploaded_csv = st.sidebar.file_uploader("📤 CSVからデータを復元", type=["csv"])
 if uploaded_csv is not None:
     try:
         restored_df = pd.read_csv(uploaded_csv)
+        # 必要なカラムが揃っているか簡易チェック
         required_cols = ["id", "code_name", "bullet", "attribute", "part", "character", "image_base64"]
         if all(col in restored_df.columns for col in required_cols):
-            if st.sidebar.button("⚠️ このCSVデータで上書きする"):
+            if st.sidebar.button("⚠️ このCSVデータでスプレッドシートを上書きする"):
                 save_data(restored_df)
-                st.sidebar.success("データを上書きしました！画面を更新してください。")
+                st.sidebar.success("データを復元・上書きしました！画面を更新してください。")
                 st.rerun()
         else:
             st.sidebar.error("CSVのフォーマットが正しくありません。")
@@ -204,7 +222,7 @@ if menu == "コレクション一覧・検索":
                     except:
                         st.warning("画像読み込みエラー")
                 else:
-                    st.info("📷 画像なし")
+                    st.warning("画像なし")
                 
                 info_html = f"""
                 <div style='font-size: {body_size}; line-height: 1.4; margin-bottom: 0.5rem;'>
