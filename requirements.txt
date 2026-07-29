@@ -1,5 +1,5 @@
 streamlit
 pandas
 Pillow
-gspread
-oauth2client
+opencv-python-headless
+qrcode
