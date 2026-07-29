@@ -5,6 +5,7 @@ import cv2
 from google.oauth2.service_account import Credentials
 import gspread
 import numpy as np
+import pandas as pd  # ←ここが抜けていないか確認！
 from PIL import Image
 import qrcode
 import streamlit as st
