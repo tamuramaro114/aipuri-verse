@@ -486,7 +486,7 @@ elif menu == "🎯 弾別コンプリート状況":
       "おねがい3だん": (
           "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai3_master.csv"  # ←必要に応じてファイル名に合わせて変更してください
       ),
-    　"リング6だん": (
+      "リング6だん": (
           "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/ring6_master.csv"
       ),
   }
