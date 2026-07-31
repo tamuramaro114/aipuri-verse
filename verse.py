@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import gspread
 import numpy as np
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageOps
 import qrcode
 import streamlit as st
 
@@ -108,7 +108,10 @@ def save_data(df):
 
 def process_and_optimize_qr(uploaded_image):
   try:
+    # スマホからのアップロード画像などで向き情報(EXIF)が狂うのを防ぐため ImageOps.exif_transpose を適用
     image = Image.open(uploaded_image)
+    image = ImageOps.exif_transpose(image)
+
     if image.mode in ("RGBA", "P"):
       image = image.convert("RGB")
 
@@ -160,12 +163,24 @@ def process_and_optimize_qr(uploaded_image):
       )
 
   except Exception as e:
-    image = Image.open(uploaded_image)
-    if image.mode in ("RGBA", "P"):
-      image = image.convert("RGB")
-    output = io.BytesIO()
-    image.save(output, format="JPEG", quality=85)
-    return output.getvalue(), "error", f"処理中エラー: {e}"
+    try:
+      image = Image.open(uploaded_image)
+      image = ImageOps.exif_transpose(image)
+      if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+      output = io.BytesIO()
+      image.save(output, format="JPEG", quality=85)
+      return (
+          output.getvalue(),
+          "error",
+          f"処理中エラーが発生しましたが代替保存しました: {e}",
+      )
+    except Exception as e2:
+      return (
+          b"",
+          "error",
+          f"画像の読み込みに完全に失敗しました。ファイル形式を確認してください: {e2}",
+      )
 
 
 data = load_data()
@@ -178,6 +193,7 @@ menu = st.sidebar.radio(
         "コレクション一覧・検索",
         "プリフォトを追加する",
         "🎯 弾別コンプリート状況",
+        "🎯 チャンスコード集",
     ],
 )
 
@@ -218,6 +234,7 @@ ALL_BULLET_OPTIONS = (
     NORMAL_BULLET_OPTIONS + MILLEFEE_BULLET_OPTIONS + GUMMI_BULLET_OPTIONS
 )
 
+# 要望に合わせ「ひろば」「チャンス本体」を追加
 ATTRIBUTE_OPTIONS = [
     "つうじょう",
     "プリティー",
@@ -228,8 +245,10 @@ ATTRIBUTE_OPTIONS = [
     "フルコーデ",
     "ミルフィー",
     "グミ",
+    "ひろば",
+    "チャンス本体",
 ]
-# 部位に「フルコーデ」を追加しました
+
 PART_OPTIONS = [
     "アクセ",
     "ワンピース",
@@ -238,6 +257,21 @@ PART_OPTIONS = [
     "シューズ",
     "フルコーデ",
 ]
+
+
+# 複数属性文字列からリストへの変換補助関数
+def get_attr_list(attr_str):
+  if not isinstance(attr_str, str) or not attr_str.strip():
+    return []
+  # カンマまたはスラッシュ区切りに対応
+  raw_list = (
+      attr_str.replace("、", ",")
+      .replace("/", ",")
+      .replace(" ", "")
+      .split(",")
+  )
+  return [a.strip() for a in raw_list if a.strip()]
+
 
 # ---------------------------------------------------------
 # 1. コレクション一覧・検索画面（編集・削除機能付き）
@@ -267,7 +301,26 @@ if menu == "コレクション一覧・検索":
         "横に並べるカードの数", min_value=2, max_value=6, value=3
     )
 
+    # 横に並べるカードの数に応じた文字サイズを動的に計算・定義
+    if cols_per_row <= 3:
+      title_font_size = "1.0rem"
+      sub_font_size = "0.85rem"
+    elif cols_per_row == 4:
+      title_font_size = "0.9rem"
+      sub_font_size = "0.75rem"
+    else:  # 5, 6
+      title_font_size = "0.8rem"
+      sub_font_size = "0.65rem"
+
     filtered_data = data.copy()
+
+    # 要望：「チャンス本体」を含むQRコードをコレクション一覧に表示させない
+    if not filtered_data.empty:
+      filtered_data = filtered_data[
+          ~filtered_data["attribute"].apply(
+              lambda x: "チャンス本体" in get_attr_list(str(x))
+          )
+      ]
 
     if search_keyword:
       filtered_data = filtered_data[
@@ -277,7 +330,9 @@ if menu == "コレクション一覧・検索":
 
     if selected_attribute != "すべて":
       filtered_data = filtered_data[
-          filtered_data["attribute"] == selected_attribute
+          filtered_data["attribute"].apply(
+              lambda x: selected_attribute in get_attr_list(str(x))
+          )
       ]
 
     if filter_bullet != "すべて":
@@ -291,7 +346,7 @@ if menu == "コレクション一覧・検索":
       filtered_data = filtered_data.sort_values(by="code_name", ascending=True)
 
     st.write(
-        f"全 **{len(data)}** 枚中 / 表示件数: **{len(filtered_data)}** 枚"
+        f"全 **{len(data)}** 枚中（チャンス本体除外後） / 表示件数: **{len(filtered_data)}** 枚"
     )
 
     for idx, (i, row) in enumerate(filtered_data.iterrows()):
@@ -300,18 +355,17 @@ if menu == "コレクション一覧・検索":
 
       with col[idx % cols_per_row]:
         st.markdown(
-            f"<p style='font-weight: bold; margin-bottom: 0.2rem;'>{row['code_name']}</p>",
+            f"<p style='font-size: {title_font_size}; font-weight: bold; margin-bottom: 0.2rem;'>{row['code_name']}</p>",
             unsafe_allow_html=True,
         )
 
         if pd.notna(row["image_base64"]) and row["image_base64"] != "":
           try:
             image_bytes = base64.b64decode(row["image_base64"])
-            encoded_grid_img = base64.b64encode(image_bytes).decode("utf-8")
             st.markdown(
                 f"""
-                        <div style="background-color: #ffffff; padding: 8px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.3rem;">
-                            <img src="data:image/png;base64,{encoded_grid_img}" style="width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+                        <div style="background-color: #ffffff; padding: 6px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.3rem;">
+                            <img src="data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}" style="width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
                         </div>
                         """,
                 unsafe_allow_html=True,
@@ -332,12 +386,11 @@ if menu == "コレクション一覧・検索":
             else ""
         )
         st.markdown(
-            f"<p style='font-size: 0.85rem; color: #555; margin: 0;'>{char_text} / {attr_text}</p>"
-            f"<p style='font-size: 0.85rem; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} /👗 {row.get('part', '')}</p>",
+            f"<p style='font-size: {sub_font_size}; color: #555; margin: 0;'>{char_text} / {attr_text}</p>"
+            f"<p style='font-size: {sub_font_size}; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} /👗 {row.get('part', '')}</p>",
             unsafe_allow_html=True,
         )
 
-        # 編集・削除ボタンを2カラムで配置
         b_col1, b_col2 = st.columns(2)
         with b_col1:
           if st.button("✏️ 編集", key=f"edit_btn_{row['id']}"):
@@ -349,18 +402,23 @@ if menu == "コレクション一覧・検索":
             st.success("削除しました！")
             st.rerun()
 
-        # 編集フォーム（編集ボタンが押されたときのみ展開）
         if st.session_state.get(f"editing_{row['id']}", False):
           with st.form(key=f"edit_form_{row['id']}"):
             st.markdown(f"**ID: {row['id']} の編集**")
             new_code_name = st.text_input("コーデ名", value=row["code_name"])
 
-            # 既存の選択肢のインデックスを取得（範囲外エラー防止の安全策付き）
-            attr_idx = (
-                ATTRIBUTE_OPTIONS.index(row["attribute"])
-                if row["attribute"] in ATTRIBUTE_OPTIONS
-                else 0
+            # 複数選択に対応したデフォルト値の抽出
+            current_attrs = get_attr_list(row["attribute"])
+            valid_default_attrs = [
+                a for a in current_attrs if a in ATTRIBUTE_OPTIONS
+            ]
+
+            new_attributes = st.multiselect(
+                "属性（複数選択可）",
+                ATTRIBUTE_OPTIONS,
+                default=valid_default_attrs,
             )
+
             bullet_idx = (
                 ALL_BULLET_OPTIONS.index(row["bullet"])
                 if row["bullet"] in ALL_BULLET_OPTIONS
@@ -372,9 +430,6 @@ if menu == "コレクション一覧・検索":
                 else 0
             )
 
-            new_attribute = st.selectbox(
-                "属性", ATTRIBUTE_OPTIONS, index=attr_idx
-            )
             new_bullet = st.selectbox("弾数", ALL_BULLET_OPTIONS, index=bullet_idx)
             new_part = st.selectbox("部位", PART_OPTIONS, index=part_idx)
             new_character = st.text_input(
@@ -384,8 +439,12 @@ if menu == "コレクション一覧・検索":
             col_save, col_cancel = st.columns(2)
             with col_save:
               if st.form_submit_button("保存"):
+                # カンマ区切り文字列として保存
+                combined_attr = (
+                    ",".join(new_attributes) if new_attributes else ""
+                )
                 data.loc[data["id"] == row["id"], "code_name"] = new_code_name
-                data.loc[data["id"] == row["id"], "attribute"] = new_attribute
+                data.loc[data["id"] == row["id"], "attribute"] = combined_attr
                 data.loc[data["id"] == row["id"], "bullet"] = new_bullet
                 data.loc[data["id"] == row["id"], "part"] = new_part
                 data.loc[data["id"] == row["id"], "character"] = new_character
@@ -420,15 +479,16 @@ elif menu == "プリフォトを追加する":
       processed_bytes, status, msg = process_and_optimize_qr(uploaded_image)
     st.success(msg)
 
-    encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
-    st.markdown(
-        f"""
-        <div style="background-color: white; padding: 15px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
-            <img src="data:image/png;base64,{encoded_preview}" width="350" style="image-rendering: pixelated; image-rendering: crisp-edges;">
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    if processed_bytes:
+      encoded_preview = base64.b64encode(processed_bytes).decode("utf-8")
+      st.markdown(
+          f"""
+          <div style="background-color: white; padding: 15px; display: inline-block; border-radius: 8px; border: 1px solid #ddd; text-align: center;">
+              <img src="data:image/png;base64,{encoded_preview}" width="350" style="image-rendering: pixelated; image-rendering: crisp-edges;">
+          </div>
+          """,
+          unsafe_allow_html=True,
+      )
 
     if st.button("✨ ファイル名をコーデ名として使う"):
       st.session_state["code_name_input"] = file_base_name
@@ -438,14 +498,17 @@ elif menu == "プリフォトを追加する":
     code_name = st.text_input(
         "コーデ名", value=st.session_state["code_name_input"]
     )
-    attribute = st.radio("属性", ATTRIBUTE_OPTIONS, horizontal=True)
+    # 要望：複数属性（ジャンル付け）に対応するため、selectbox/radioからmultiselectに変更
+    selected_attributes = st.multiselect(
+        "属性（複数選択可）", ATTRIBUTE_OPTIONS, default=["つうじょう"]
+    )
     bullet = st.radio("弾数", ALL_BULLET_OPTIONS, horizontal=True)
     part = st.radio("部位", PART_OPTIONS, horizontal=True)
     character = st.text_input("キャラクター名")
 
     if st.form_submit_button("登録する"):
-      if not code_name or uploaded_image is None:
-        st.error("コーデ名と画像を入力してください。")
+      if not code_name or uploaded_image is None or processed_bytes is None:
+        st.error("コーデ名と有効な画像を入力してください。")
       else:
         new_id = (
             int(data["id"].max() + 1)
@@ -453,11 +516,14 @@ elif menu == "プリフォトを追加する":
             else 1
         )
         image_base64 = base64.b64encode(processed_bytes).decode("utf-8")
+        combined_attr = (
+            ",".join(selected_attributes) if selected_attributes else ""
+        )
         new_row = pd.DataFrame({
             "id": [new_id],
             "code_name": [code_name],
             "bullet": [bullet],
-            "attribute": [attribute],
+            "attribute": [combined_attr],
             "part": [part],
             "character": [character],
             "image_base64": [image_base64],
@@ -475,19 +541,18 @@ elif menu == "🎯 弾別コンプリート状況":
       "外部（GitHubなど）に配置した各弾のマスターCSVを読み込み、所持状況をチェックします。"
   )
 
-  # 📌 ここに新しい弾のCSVを追加していくことができます
   bullet_csv_urls = {
       "おねがい1だん": (
-          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai1_master.csv"
+          "https://raw.githubusercontent.com/tamuramaro114/aipri-verse/main/aipri_master/onegai1_master.csv"
       ),
       "おねがい2だん": (
-          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai2_master.csv"
+          "https://raw.githubusercontent.com/tamuramaro114/aipri-verse/main/aipri_master/onegai2_master.csv"
       ),
       "おねがい3だん": (
-          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/onegai3_master.csv"  # ←必要に応じてファイル名に合わせて変更してください
+          "https://raw.githubusercontent.com/tamuramaro114/aipri-verse/main/aipri_master/onegai3_master.csv"
       ),
       "リング6だん": (
-          "https://raw.githubusercontent.com/tamuramaro114/aipuri-verse/main/aipri_master/ring6_master.csv"
+          "https://raw.githubusercontent.com/tamuramaro114/aipri-verse/main/aipri_master/ring6_master.csv"
       ),
   }
 
@@ -515,7 +580,6 @@ elif menu == "🎯 弾別コンプリート状況":
 
       for _, row in master_df.iterrows():
         code_name = str(row["code_name"]).strip()
-        # CSVに attribute がない場合の安全策として .get を使用
         attribute = str(row.get("attribute", "つうじょう")).strip()
         part = str(row["part"]).strip()
 
@@ -524,14 +588,38 @@ elif menu == "🎯 弾別コンプリート状況":
             (owned_df["code_name"] == code_name) & (owned_df["part"] == part)
         ]
         is_owned = not match.empty
+
+        # 要望：チャンスコーデの未所持コーデでも同名コーデの「チャンス本体」を持っている際は「🆗内定」と表示
+        status_str = "❌ 未所持"
         if is_owned:
           owned_count += 1
+          status_str = "✅ 所持"
+        else:
+          # チャンスコーデ判定 または 属性にチャンスコーデが含まれる場合
+          is_chance_target = (
+              "チャンスコーデ" in attribute
+              or "チャンスコーデ" in master_df.columns
+              and row.get("attribute", "") == "チャンスコーデ"
+          )
+          # 登録データ側で同じ弾かつ同じコーデ名で、attributeに「チャンス本体」を持つものが存在するかチェック
+          has_chance_body = not owned_df[
+              (owned_df["code_name"] == code_name)
+              & (
+                  owned_df["attribute"].apply(
+                      lambda x: "チャンス本体" in get_attr_list(str(x))
+                  )
+              )
+          ].empty
+
+          if is_chance_target and has_chance_body:
+            status_str = "🆗内定"
+            # 内定の場合もコンプ数に含めるかはお好みですが、判定として分かりやすく表示
 
         checked_list.append({
             "コーデ名": code_name,
-            "属性": attribute,  # ← 属性を表示項目に追加
+            "属性": attribute,
             "部位": part,
-            "状態": "✅ 所持" if is_owned else "❌ 未所持",
+            "状態": status_str,
         })
 
       check_df = pd.DataFrame(checked_list)
@@ -549,7 +637,9 @@ elif menu == "🎯 弾別コンプリート状況":
       st.progress(progress_rate)
 
       filter_status = st.radio(
-          "表示切替", ["すべて表示", "所持のみ", "未所持のみ"], horizontal=True
+          "表示切替",
+          ["すべて表示", "所持のみ", "未所持のみ", "🆗内定のみ"],
+          horizontal=True,
       )
 
       display_df = check_df.copy()
@@ -557,6 +647,8 @@ elif menu == "🎯 弾別コンプリート状況":
         display_df = display_df[display_df["状態"] == "✅ 所持"]
       elif filter_status == "未所持のみ":
         display_df = display_df[display_df["状態"] == "❌ 未所持"]
+      elif filter_status == "🆗内定のみ":
+        display_df = display_df[display_df["状態"] == "🆗内定"]
 
       st.dataframe(display_df, use_container_width=True)
 
@@ -564,3 +656,176 @@ elif menu == "🎯 弾別コンプリート状況":
       st.error(
           f"外部CSVの読み込みに失敗しました。URLやファイルの公開設定をご確認ください: {e}"
       )
+
+# ---------------------------------------------------------
+# 4. チャンスコード集画面（新規追加）
+# ---------------------------------------------------------
+elif menu == "🎯 チャンスコード集":
+  st.header("🎯 チャンスコード集（チャンス本体）")
+  st.write("「チャンス本体」属性を持つ登録済みQRコードの一覧・検索場所です。")
+
+  if data.empty:
+    st.info("データが登録されていません。")
+  else:
+    # 属性に「チャンス本体」が含まれるデータを抽出
+    chance_data = data[
+        data["attribute"].apply(
+            lambda x: "チャンス本体" in get_attr_list(str(x))
+        )
+    ].copy()
+
+    if chance_data.empty:
+      st.info("「チャンス本体」属性を持つプリフォトはまだ登録されていません。")
+    else:
+      search_keyword_c = st.text_input("チャンスコードをコーデ名・キャラ名で検索")
+      filter_bullet_c = st.selectbox(
+          "弾数で絞り込み (チャンス)", ["すべて"] + list(chance_data["bullet"].unique())
+      )
+      cols_per_row_c = st.slider(
+          "横に並べるカードの数 (チャンス)",
+          min_value=2,
+          max_value=6,
+          value=3,
+          key="chance_slider",
+      )
+
+      if cols_per_row_c <= 3:
+        c_title_fs = "1.0rem"
+        c_sub_fs = "0.85rem"
+      elif cols_per_row_c == 4:
+        c_title_fs = "0.9rem"
+        c_sub_fs = "0.75rem"
+      else:
+        c_title_fs = "0.8rem"
+        c_sub_fs = "0.65rem"
+
+      filtered_chance = chance_data.copy()
+      if search_keyword_c:
+        filtered_chance = filtered_chance[
+            filtered_chance["code_name"].str.contains(
+                search_keyword_c, na=False
+            )
+            | filtered_chance["character"].str.contains(
+                search_keyword_c, na=False
+            )
+        ]
+      if filter_bullet_c != "すべて":
+        filtered_chance = filtered_chance[
+            filtered_chance["bullet"] == filter_bullet_c
+        ]
+
+      st.write(f"表示件数: **{len(filtered_chance)}** 枚")
+
+      for idx, (i, row) in enumerate(filtered_chance.iterrows()):
+        if idx % cols_per_row_c == 0:
+          col = st.columns(cols_per_row_c)
+
+        with col[idx % cols_per_row_c]:
+          st.markdown(
+              f"<p style='font-size: {c_title_fs}; font-weight: bold; margin-bottom: 0.2rem;'>{row['code_name']}</p>",
+              unsafe_allow_html=True,
+          )
+
+          if pd.notna(row["image_base64"]) and row["image_base64"] != "":
+            try:
+              image_bytes = base64.b64decode(row["image_base64"])
+              st.markdown(
+                  f"""
+                          <div style="background-color: #ffffff; padding: 6px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.3rem;">
+                              <img src="data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}" style="width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+                          </div>
+                          """,
+                  unsafe_allow_html=True,
+              )
+            except:
+              st.warning("画像エラー")
+          else:
+            st.info("📷 画像なし")
+
+          char_text = (
+              f"👤 {row['character']}"
+              if row.get("character", "") != ""
+              else "👤 なし"
+          )
+          attr_text = (
+              f"✨ {row['attribute']}"
+              if row.get("attribute", "") != ""
+              else ""
+          )
+          st.markdown(
+              f"<p style='font-size: {c_sub_fs}; color: #555; margin: 0;'>{char_text} / {attr_text}</p>"
+              f"<p style='font-size: {c_sub_fs}; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} /👗 {row.get('part', '')}</p>",
+              unsafe_allow_html=True,
+          )
+
+          b_col1, b_col2 = st.columns(2)
+          with b_col1:
+            if st.button("✏️ 編集", key=f"c_edit_btn_{row['id']}"):
+              st.session_state[f"editing_{row['id']}"] = True
+          with b_col2:
+            if st.button("🗑️ 削除", key=f"c_del_{row['id']}"):
+              data = data[data["id"] != row["id"]]
+              save_data(data)
+              st.success("削除しました！")
+              st.rerun()
+
+          if st.session_state.get(f"editing_{row['id']}", False):
+            with st.form(key=f"c_edit_form_{row['id']}"):
+              st.markdown(f"**ID: {row['id']} の編集**")
+              new_code_name = st.text_input("コーデ名", value=row["code_name"])
+
+              current_attrs = get_attr_list(row["attribute"])
+              valid_default_attrs = [
+                  a for a in current_attrs if a in ATTRIBUTE_OPTIONS
+              ]
+
+              new_attributes = st.multiselect(
+                  "属性（複数選択可）",
+                  ATTRIBUTE_OPTIONS,
+                  default=valid_default_attrs,
+              )
+
+              bullet_idx = (
+                  ALL_BULLET_OPTIONS.index(row["bullet"])
+                  if row["bullet"] in ALL_BULLET_OPTIONS
+                  else 0
+              )
+              part_idx = (
+                  PART_OPTIONS.index(row.get("part", "アクセ"))
+                  if row.get("part", "アクセ") in PART_OPTIONS
+                  else 0
+              )
+
+              new_bullet = st.selectbox(
+                  "弾数", ALL_BULLET_OPTIONS, index=bullet_idx
+              )
+              new_part = st.selectbox("部位", PART_OPTIONS, index=part_idx)
+              new_character = st.text_input(
+                  "キャラクター名", value=row.get("character", "")
+              )
+
+              col_save, col_cancel = st.columns(2)
+              with col_save:
+                if st.form_submit_button("保存"):
+                  combined_attr = (
+                      ",".join(new_attributes) if new_attributes else ""
+                  )
+                  data.loc[data["id"] == row["id"], "code_name"] = (
+                      new_code_name
+                  )
+                  data.loc[data["id"] == row["id"], "attribute"] = combined_attr
+                  data.loc[data["id"] == row["id"], "bullet"] = new_bullet
+                  data.loc[data["id"] == row["id"], "part"] = new_part
+                  data.loc[data["id"] == row["id"], "character"] = (
+                      new_character
+                  )
+                  save_data(data)
+                  st.session_state[f"editing_{row['id']}"] = False
+                  st.success("更新しました！")
+                  st.rerun()
+              with col_cancel:
+                if st.form_submit_button("キャンセル"):
+                  st.session_state[f"editing_{row['id']}"] = False
+                  st.rerun()
+
+          st.markdown("---")
