@@ -639,7 +639,7 @@ elif menu == "🎯 弾別コンプリート状況":
 
       check_df = pd.DataFrame(checked_list)
 
-      # --- 進捗の表示（2つに分けて表示） ---
+# --- 進捗の表示（2つに分けて表示・文字サイズ調整版） ---
       st.subheader("📊 コンプリート進捗状況")
 
       col_n, col_c = st.columns(2)
@@ -648,13 +648,20 @@ elif menu == "🎯 弾別コンプリート状況":
         st.markdown("### 🏷️ チャンスコーデ以外")
         n_rate = normal_owned / normal_total if normal_total > 0 else 0
         n_actual_rate = normal_actual / normal_total if normal_total > 0 else 0
-        st.metric(
-            label="通常所持",
-            value=f"{normal_owned} / {normal_total} パーツ ({n_rate*100:.1f}%)",
-        )
-        st.metric(
-            label="実質（内定込み）",
-            value=f"{normal_actual} / {normal_total} パーツ ({n_actual_rate*100:.1f}%)",
+
+        # st.metric の代わりに st.markdown でフォントサイズを小さく調整
+        st.markdown(
+            f"""
+            <div style="margin-bottom: 0.8rem;">
+                <span style="font-size: 0.85rem; color: #666;">通常所持</span><br>
+                <span style="font-size: 1.2rem; font-weight: bold;">{normal_owned} / {normal_total} パーツ ({n_rate*100:.1f}%)</span>
+            </div>
+            <div style="margin-bottom: 0.5rem;">
+                <span style="font-size: 0.85rem; color: #666;">実質（内定込み）</span><br>
+                <span style="font-size: 1.2rem; font-weight: bold; color: #0066cc;">{normal_actual} / {normal_total} パーツ ({n_actual_rate*100:.1f}%)</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
         st.progress(n_actual_rate)
 
@@ -662,16 +669,22 @@ elif menu == "🎯 弾別コンプリート状況":
         st.markdown("### 🎯 チャンスコーデ")
         c_rate = chance_owned / chance_total if chance_total > 0 else 0
         c_actual_rate = chance_actual / chance_total if chance_total > 0 else 0
-        st.metric(
-            label="通常所持",
-            value=f"{chance_owned} / {chance_total} パーツ ({c_rate*100:.1f}%)",
-        )
-        st.metric(
-            label="実質（内定込み）",
-            value=f"{chance_actual} / {chance_total} パーツ ({c_actual_rate*100:.1f}%)",
+
+        st.markdown(
+            f"""
+            <div style="margin-bottom: 0.8rem;">
+                <span style="font-size: 0.85rem; color: #666;">通常所持</span><br>
+                <span style="font-size: 1.2rem; font-weight: bold;">{chance_owned} / {chance_total} パーツ ({c_rate*100:.1f}%)</span>
+            </div>
+            <div style="margin-bottom: 0.5rem;">
+                <span style="font-size: 0.85rem; color: #666;">実質（内定込み）</span><br>
+                <span style="font-size: 1.2rem; font-weight: bold; color: #0066cc;">{chance_actual} / {chance_total} パーツ ({c_actual_rate*100:.1f}%)</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
         st.progress(c_actual_rate)
-
+          
       st.markdown("---")
 
       filter_status = st.radio(
