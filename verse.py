@@ -108,7 +108,6 @@ def save_data(df):
 
 def process_and_optimize_qr(uploaded_image):
   try:
-    # スマホからのアップロード画像などで向き情報(EXIF)が狂うのを防ぐため ImageOps.exif_transpose を適用
     image = Image.open(uploaded_image)
     image = ImageOps.exif_transpose(image)
 
@@ -234,7 +233,6 @@ ALL_BULLET_OPTIONS = (
     NORMAL_BULLET_OPTIONS + MILLEFEE_BULLET_OPTIONS + GUMMI_BULLET_OPTIONS
 )
 
-# 要望に合わせ「ひろば」「チャンス本体」を追加
 ATTRIBUTE_OPTIONS = [
     "つうじょう",
     "プリティー",
@@ -259,11 +257,9 @@ PART_OPTIONS = [
 ]
 
 
-# 複数属性文字列からリストへの変換補助関数
 def get_attr_list(attr_str):
   if not isinstance(attr_str, str) or not attr_str.strip():
     return []
-  # カンマまたはスラッシュ区切りに対応
   raw_list = (
       attr_str.replace("、", ",")
       .replace("/", ",")
@@ -274,7 +270,7 @@ def get_attr_list(attr_str):
 
 
 # ---------------------------------------------------------
-# 1. コレクション一覧・検索画面（編集・削除機能付き）
+# 1. コレクション一覧・検索画面
 # ---------------------------------------------------------
 if menu == "コレクション一覧・検索":
   st.header("📖 マイ・プリフォトコレクション")
@@ -301,20 +297,19 @@ if menu == "コレクション一覧・検索":
         "横に並べるカードの数", min_value=2, max_value=6, value=3
     )
 
-    # 横に並べるカードの数に応じた文字サイズを動的に計算・定義
     if cols_per_row <= 3:
       title_font_size = "1.0rem"
       sub_font_size = "0.85rem"
     elif cols_per_row == 4:
       title_font_size = "0.9rem"
       sub_font_size = "0.75rem"
-    else:  # 5, 6
+    else:
       title_font_size = "0.8rem"
       sub_font_size = "0.65rem"
 
     filtered_data = data.copy()
 
-    # 要望：「チャンス本体」を含むQRコードをコレクション一覧に表示させない
+    # 「チャンス本体」を含むQRコードをコレクション一覧に表示させない
     if not filtered_data.empty:
       filtered_data = filtered_data[
           ~filtered_data["attribute"].apply(
@@ -407,7 +402,6 @@ if menu == "コレクション一覧・検索":
             st.markdown(f"**ID: {row['id']} の編集**")
             new_code_name = st.text_input("コーデ名", value=row["code_name"])
 
-            # 複数選択に対応したデフォルト値の抽出
             current_attrs = get_attr_list(row["attribute"])
             valid_default_attrs = [
                 a for a in current_attrs if a in ATTRIBUTE_OPTIONS
@@ -439,7 +433,6 @@ if menu == "コレクション一覧・検索":
             col_save, col_cancel = st.columns(2)
             with col_save:
               if st.form_submit_button("保存"):
-                # カンマ区切り文字列として保存
                 combined_attr = (
                     ",".join(new_attributes) if new_attributes else ""
                 )
@@ -498,7 +491,6 @@ elif menu == "プリフォトを追加する":
     code_name = st.text_input(
         "コーデ名", value=st.session_state["code_name_input"]
     )
-    # 要望：複数属性（ジャンル付け）に対応するため、selectbox/radioからmultiselectに変更
     selected_attributes = st.multiselect(
         "属性（複数選択可）", ATTRIBUTE_OPTIONS, default=["つうじょう"]
     )
@@ -533,7 +525,7 @@ elif menu == "プリフォトを追加する":
         st.success("✨ 登録しました！")
 
 # ---------------------------------------------------------
-# 3. 弾別コンプリート状況（外部CSV対応）
+# 3. 弾別コンプリート状況（外部CSV対応 / 分割・実質％対応）
 # ---------------------------------------------------------
 elif menu == "🎯 弾別コンプリート状況":
   st.header("🎯 弾別コンプリート状況チェッカー")
@@ -576,12 +568,27 @@ elif menu == "🎯 弾別コンプリート状況":
       owned_df = data[data["bullet"] == selected_bullet_target]
 
       checked_list = []
-      owned_count = 0
+
+      # カウント用変数
+      normal_total = 0
+      normal_owned = 0
+      normal_actual = 0  # 所持 + 內定
+
+      chance_total = 0
+      chance_owned = 0
+      chance_actual = 0  # 所持 + 內定
 
       for _, row in master_df.iterrows():
         code_name = str(row["code_name"]).strip()
         attribute = str(row.get("attribute", "つうじょう")).strip()
         part = str(row["part"]).strip()
+
+        # 判定：チャンスコーデ系かどうか
+        is_chance_item = (
+            "チャンスコーデ" in attribute
+            or "チャンスコーデ" in master_df.columns
+            and row.get("attribute", "") == "チャンスコーデ"
+        )
 
         # 所持判定（コーデ名と部位で判定）
         match = owned_df[
@@ -589,19 +596,11 @@ elif menu == "🎯 弾別コンプリート状況":
         ]
         is_owned = not match.empty
 
-        # 要望：チャンスコーデの未所持コーデでも同名コーデの「チャンス本体」を持っている際は「🆗内定」と表示
         status_str = "❌ 未所持"
         if is_owned:
-          owned_count += 1
           status_str = "✅ 所持"
         else:
-          # チャンスコーデ判定 または 属性にチャンスコーデが含まれる場合
-          is_chance_target = (
-              "チャンスコーデ" in attribute
-              or "チャンスコーデ" in master_df.columns
-              and row.get("attribute", "") == "チャンスコーデ"
-          )
-          # 登録データ側で同じ弾かつ同じコーデ名で、attributeに「チャンス本体」を持つものが存在するかチェック
+          # 内定判定（チャンス本体を所持しているか）
           has_chance_body = not owned_df[
               (owned_df["code_name"] == code_name)
               & (
@@ -611,30 +610,69 @@ elif menu == "🎯 弾別コンプリート状況":
               )
           ].empty
 
-          if is_chance_target and has_chance_body:
+          if is_chance_item and has_chance_body:
             status_str = "🆗内定"
-            # 内定の場合もコンプ数に含めるかはお好みですが、判定として分かりやすく表示
+
+        # 集計への加算
+        if is_chance_item:
+          chance_total += 1
+          if status_str == "✅ 所持":
+            chance_owned += 1
+            chance_actual += 1
+          elif status_str == "🆗内定":
+            chance_actual += 1
+        else:
+          normal_total += 1
+          if status_str == "✅ 所持":
+            normal_owned += 1
+            normal_actual += 1
+          elif status_str == "🆗内定":
+            normal_actual += 1
 
         checked_list.append({
             "コーデ名": code_name,
             "属性": attribute,
             "部位": part,
             "状態": status_str,
+            "種別": "チャンスコーデ" if is_chance_item else "チャンスコーデ以外",
         })
 
       check_df = pd.DataFrame(checked_list)
 
-      total_items = len(master_df)
-      progress_rate = owned_count / total_items if total_items > 0 else 0
+      # --- 進捗の表示（2つに分けて表示） ---
+      st.subheader("📊 コンプリート進捗状況")
 
-      st.metric(
-          label=f"{selected_bullet_target} コンプリート進捗",
-          value=(
-              f"{owned_count} / {total_items} パーツ"
-              f" ({progress_rate*100:.1f}%)"
-          ),
-      )
-      st.progress(progress_rate)
+      col_n, col_c = st.columns(2)
+
+      with col_n:
+        st.markdown("### 🏷️ チャンスコーデ以外")
+        n_rate = normal_owned / normal_total if normal_total > 0 else 0
+        n_actual_rate = normal_actual / normal_total if normal_total > 0 else 0
+        st.metric(
+            label="通常所持",
+            value=f"{normal_owned} / {normal_total} パーツ ({n_rate*100:.1f}%)",
+        )
+        st.metric(
+            label="実質（内定込み）",
+            value=f"{normal_actual} / {normal_total} パーツ ({n_actual_rate*100:.1f}%)",
+        )
+        st.progress(n_actual_rate)
+
+      with col_c:
+        st.markdown("### 🎯 チャンスコーデ")
+        c_rate = chance_owned / chance_total if chance_total > 0 else 0
+        c_actual_rate = chance_actual / chance_total if chance_total > 0 else 0
+        st.metric(
+            label="通常所持",
+            value=f"{chance_owned} / {chance_total} パーツ ({c_rate*100:.1f}%)",
+        )
+        st.metric(
+            label="実質（内定込み）",
+            value=f"{chance_actual} / {chance_total} パーツ ({c_actual_rate*100:.1f}%)",
+        )
+        st.progress(c_actual_rate)
+
+      st.markdown("---")
 
       filter_status = st.radio(
           "表示切替",
@@ -642,7 +680,7 @@ elif menu == "🎯 弾別コンプリート状況":
           horizontal=True,
       )
 
-      display_df = check_df.copy()
+      display_df = check_df.drop(columns=["種別"])  # 表からは種別カラムを隠す
       if filter_status == "所持のみ":
         display_df = display_df[display_df["状態"] == "✅ 所持"]
       elif filter_status == "未所持のみ":
@@ -658,7 +696,7 @@ elif menu == "🎯 弾別コンプリート状況":
       )
 
 # ---------------------------------------------------------
-# 4. チャンスコード集画面（新規追加）
+# 4. チャンスコード集画面
 # ---------------------------------------------------------
 elif menu == "🎯 チャンスコード集":
   st.header("🎯 チャンスコード集（チャンス本体）")
@@ -667,7 +705,6 @@ elif menu == "🎯 チャンスコード集":
   if data.empty:
     st.info("データが登録されていません。")
   else:
-    # 属性に「チャンス本体」が含まれるデータを抽出
     chance_data = data[
         data["attribute"].apply(
             lambda x: "チャンス本体" in get_attr_list(str(x))
