@@ -193,6 +193,7 @@ menu = st.sidebar.radio(
         "プリフォトを追加する",
         "🎯 弾別コンプリート状況",
         "🎯 チャンスコード集",
+        "⚠️ 読み取り不良コード集”,
     ],
 )
 
@@ -879,3 +880,176 @@ elif menu == "🎯 チャンスコード集":
                   st.rerun()
 
           st.markdown("---")
+
+# ---------------------------------------------------------
+# 5. チャンスコード集画面
+# ---------------------------------------------------------
+elif menu == "⚠️ 読み取り不良コード集":
+  st.header("⚠️ 読み取り不良コード集")
+  st.write("うまく読み取れなかったQRコードの一覧・検索場所です。")
+
+  if data.empty:
+    st.info("データが登録されていません。")
+  else:
+    chance_data = data[
+        data["attribute"].apply(
+            lambda x: "読み取り不可" in get_attr_list(str(x))
+        )
+    ].copy()
+
+    if chance_data.empty:
+      st.info("「チャンス本体」属性を持つプリフォトはまだ登録されていません。")
+    else:
+      search_keyword_c = st.text_input("チャンスコードをコーデ名・キャラ名で検索")
+      filter_bullet_c = st.selectbox(
+          "弾数で絞り込み (チャンス)", ["すべて"] + list(chance_data["bullet"].unique())
+      )
+      cols_per_row_c = st.slider(
+          "横に並べるカードの数 (チャンス)",
+          min_value=2,
+          max_value=6,
+          value=3,
+          key="chance_slider",
+      )
+
+      if cols_per_row_c <= 3:
+        c_title_fs = "1.0rem"
+        c_sub_fs = "0.85rem"
+      elif cols_per_row_c == 4:
+        c_title_fs = "0.9rem"
+        c_sub_fs = "0.75rem"
+      else:
+        c_title_fs = "0.8rem"
+        c_sub_fs = "0.65rem"
+
+      filtered_chance = chance_data.copy()
+      if search_keyword_c:
+        filtered_chance = filtered_chance[
+            filtered_chance["code_name"].str.contains(
+                search_keyword_c, na=False
+            )
+            | filtered_chance["character"].str.contains(
+                search_keyword_c, na=False
+            )
+        ]
+      if filter_bullet_c != "すべて":
+        filtered_chance = filtered_chance[
+            filtered_chance["bullet"] == filter_bullet_c
+        ]
+
+      st.write(f"表示件数: **{len(filtered_chance)}** 枚")
+
+      for idx, (i, row) in enumerate(filtered_chance.iterrows()):
+        if idx % cols_per_row_c == 0:
+          col = st.columns(cols_per_row_c)
+
+        with col[idx % cols_per_row_c]:
+          st.markdown(
+              f"<p style='font-size: {c_title_fs}; font-weight: bold; margin-bottom: 0.2rem;'>{row['code_name']}</p>",
+              unsafe_allow_html=True,
+          )
+
+          if pd.notna(row["image_base64"]) and row["image_base64"] != "":
+            try:
+              image_bytes = base64.b64decode(row["image_base64"])
+              st.markdown(
+                  f"""
+                          <div style="background-color: #ffffff; padding: 6px; border-radius: 6px; border: 1px solid #e0e0e0; text-align: center; margin-bottom: 0.3rem;">
+                              <img src="data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}" style="width: 100%; max-width: 320px; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; display: block; margin: 0 auto;">
+                          </div>
+                          """,
+                  unsafe_allow_html=True,
+              )
+            except:
+              st.warning("画像エラー")
+          else:
+            st.info("📷 画像なし")
+
+          char_text = (
+              f"👤 {row['character']}"
+              if row.get("character", "") != ""
+              else "👤 なし"
+          )
+          attr_text = (
+              f"✨ {row['attribute']}"
+              if row.get("attribute", "") != ""
+              else ""
+          )
+          st.markdown(
+              f"<p style='font-size: {c_sub_fs}; color: #555; margin: 0;'>{char_text} / {attr_text}</p>"
+              f"<p style='font-size: {c_sub_fs}; color: #555; margin-bottom: 0.5rem;'>🏷️ {row['bullet']} /👗 {row.get('part', '')}</p>",
+              unsafe_allow_html=True,
+          )
+
+          b_col1, b_col2 = st.columns(2)
+          with b_col1:
+            if st.button("✏️ 編集", key=f"c_edit_btn_{row['id']}"):
+              st.session_state[f"editing_{row['id']}"] = True
+          with b_col2:
+            if st.button("🗑️ 削除", key=f"c_del_{row['id']}"):
+              data = data[data["id"] != row["id"]]
+              save_data(data)
+              st.success("削除しました！")
+              st.rerun()
+
+          if st.session_state.get(f"editing_{row['id']}", False):
+            with st.form(key=f"c_edit_form_{row['id']}"):
+              st.markdown(f"**ID: {row['id']} の編集**")
+              new_code_name = st.text_input("コーデ名", value=row["code_name"])
+
+              current_attrs = get_attr_list(row["attribute"])
+              valid_default_attrs = [
+                  a for a in current_attrs if a in ATTRIBUTE_OPTIONS
+              ]
+
+              new_attributes = st.multiselect(
+                  "属性（複数選択可）",
+                  ATTRIBUTE_OPTIONS,
+                  default=valid_default_attrs,
+              )
+
+              bullet_idx = (
+                  ALL_BULLET_OPTIONS.index(row["bullet"])
+                  if row["bullet"] in ALL_BULLET_OPTIONS
+                  else 0
+              )
+              part_idx = (
+                  PART_OPTIONS.index(row.get("part", "アクセ"))
+                  if row.get("part", "アクセ") in PART_OPTIONS
+                  else 0
+              )
+
+              new_bullet = st.selectbox(
+                  "弾数", ALL_BULLET_OPTIONS, index=bullet_idx
+              )
+              new_part = st.selectbox("部位", PART_OPTIONS, index=part_idx)
+              new_character = st.text_input(
+                  "キャラクター名", value=row.get("character", "")
+              )
+
+              col_save, col_cancel = st.columns(2)
+              with col_save:
+                if st.form_submit_button("保存"):
+                  combined_attr = (
+                      ",".join(new_attributes) if new_attributes else ""
+                  )
+                  data.loc[data["id"] == row["id"], "code_name"] = (
+                      new_code_name
+                  )
+                  data.loc[data["id"] == row["id"], "attribute"] = combined_attr
+                  data.loc[data["id"] == row["id"], "bullet"] = new_bullet
+                  data.loc[data["id"] == row["id"], "part"] = new_part
+                  data.loc[data["id"] == row["id"], "character"] = (
+                      new_character
+                  )
+                  save_data(data)
+                  st.session_state[f"editing_{row['id']}"] = False
+                  st.success("更新しました！")
+                  st.rerun()
+              with col_cancel:
+                if st.form_submit_button("キャンセル"):
+                  st.session_state[f"editing_{row['id']}"] = False
+                  st.rerun()
+
+          st.markdown("---")
+
