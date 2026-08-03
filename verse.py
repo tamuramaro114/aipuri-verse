@@ -893,12 +893,12 @@ elif menu == "⚠️ 読み取り不良コード集":
   else:
     chance_data = data[
         data["attribute"].apply(
-            lambda x: "読み取り不可" in get_attr_list(str(x))
+            lambda x: "不可" in get_attr_list(str(x))
         )
     ].copy()
 
     if chance_data.empty:
-      st.info("「チャンス本体」属性を持つプリフォトはまだ登録されていません。")
+      st.info("読み取り不良のコードは現在ありません。")
     else:
       search_keyword_c = st.text_input("チャンスコードをコーデ名・キャラ名で検索")
       filter_bullet_c = st.selectbox(
